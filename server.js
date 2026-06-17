@@ -389,7 +389,7 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
       return res.status(400).json({ error: 'กรุณาอัปโหลดรูปสลิปโอนเงิน' });
     }
 
-    // --- ส่งสลิปไปตรวจกับ Slip API ---
+    // --- ส่งสลิปไปตรวจกับ EasySlip API ---
     const slipApiUrl = process.env.SLIP_API_URL;
     const slipApiKey = process.env.SLIP_API_KEY;
 
@@ -410,39 +410,53 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
       });
     }
 
-    // ส่งรูปไปยัง Slip API (โครงสร้างแบบ SlipOk)
-    const formData = new FormData();
-    formData.append('files', req.file.buffer, {
-      filename: req.file.originalname,
-      contentType: req.file.mimetype
-    });
+    // แปลงรูปภาพใน Buffer เป็น Base64 String สำหรับ EasySlip
+    const base64Image = req.file.buffer.toString('base64');
 
     const slipResponse = await fetch(slipApiUrl, {
       method: 'POST',
       headers: {
-        'x-authorization': slipApiKey,
-        ...formData.getHeaders()
+        'Authorization': `Bearer ${slipApiKey}`,
+        'Content-Type': 'application/json'
       },
-      body: formData
+      body: JSON.stringify({
+        base64: base64Image
+      })
     });
 
     const slipResult = await slipResponse.json();
 
-    // --- ตรวจสอบผลลัพธ์จาก Slip API ---
-    // โครงสร้าง response ของ SlipOk:
-    // { success: true, data: { transRef, amount, sendingBank, ... } }
+    // --- ตรวจสอบผลลัพธ์จาก EasySlip API ---
     if (!slipResult.success || !slipResult.data) {
+      const errorMsg = (slipResult.error && slipResult.error.message) || 'สลิปไม่ถูกต้องหรือไม่สามารถอ่าน QR Code ได้';
       await supabase.from('topups').insert({
         user_id: req.user.id,
         amount: 0,
         status: 'rejected',
-        note: 'สลิปไม่ถูกต้องหรือไม่สามารถอ่านได้',
+        note: errorMsg,
         slip_data: slipResult
       });
-      return res.status(400).json({ error: 'สลิปไม่ถูกต้องหรือไม่สามารถอ่าน QR Code ได้' });
+      return res.status(400).json({ error: errorMsg });
     }
 
-    const { transRef, amount } = slipResult.data;
+    // ดึงเลขอ้างอิงทำรายการ (transRef) แบบยืดหยุ่นรองรับ v1 และ v2
+    const transRef = slipResult.data.transRef || (slipResult.data.rawSlip && slipResult.data.rawSlip.transRef);
+
+    if (!transRef) {
+      return res.status(400).json({ error: 'ไม่พบเลขอ้างอิงรายการในสลิป' });
+    }
+
+    // ดึงยอดเงินทำรายการ (amount) แบบยืดหยุ่นรองรับ v1 และ v2
+    let amount = 0;
+    if (slipResult.data.amount && typeof slipResult.data.amount === 'object' && slipResult.data.amount.amount !== undefined) {
+      amount = slipResult.data.amount.amount;
+    } else if (slipResult.data.amountInSlip !== undefined) {
+      amount = slipResult.data.amountInSlip;
+    } else if (slipResult.data.amount !== undefined) {
+      amount = slipResult.data.amount;
+    } else if (slipResult.data.rawSlip && slipResult.data.rawSlip.amount && slipResult.data.rawSlip.amount.amount !== undefined) {
+      amount = slipResult.data.rawSlip.amount.amount;
+    }
 
     // ตรวจสอบ transRef ซ้ำ
     const { data: existingTopup } = await supabase
@@ -484,13 +498,21 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
       .update({ credit: newCredit })
       .eq('id', req.user.id);
 
+    // ดึงรหัสหรือชื่อธนาคารต้นทาง
+    let sendingBank = 'N/A';
+    if (slipResult.data.sender && slipResult.data.sender.bank) {
+      sendingBank = slipResult.data.sender.bank.short || slipResult.data.sender.bank.nameTh || 'N/A';
+    } else if (slipResult.data.rawSlip && slipResult.data.rawSlip.sender && slipResult.data.rawSlip.sender.bank) {
+      sendingBank = slipResult.data.rawSlip.sender.bank.short || slipResult.data.rawSlip.sender.bank.nameTh || 'N/A';
+    }
+
     // บันทึก topup record
     await supabase.from('topups').insert({
       user_id: req.user.id,
       amount: topupAmount,
       transaction_ref: transRef,
       status: 'approved',
-      note: `อนุมัติอัตโนมัติ — ${slipResult.data.sendingBank || 'N/A'}`,
+      note: `อนุมัติอัตโนมัติ — ${sendingBank}`,
       slip_data: slipResult.data
     });
 

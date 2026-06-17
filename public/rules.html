@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>กฎการใช้งาน — ChickDDC
+</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { fontFamily: { prompt: ['Prompt','sans-serif'] }, colors: { neon: { yellow: '#facc15', pink: '#ec4899' }, cyber: { dark: '#0a0a0f', card: '#12121a', surface: '#1a1a2e', border: '#2a2a3e' } } } }
+    }
+  </script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="font-prompt text-gray-300 grid-pattern min-h-screen flex flex-col">
+
+  <!-- NAVBAR -->
+  <nav class="nav-glass sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="flex items-center justify-between h-16">
+        <a href="/" class="flex items-center gap-2">
+          <span class="text-2xl">🖥️</span>
+          <span class="text-xl font-bold gradient-text">ChickDDC</span>
+        </a>
+        <div class="hidden md:flex items-center gap-6">
+          <a href="/" class="text-gray-400 text-sm hover:text-yellow-400 transition">หน้าหลัก</a>
+          <a href="/topup.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">เติมเงิน</a>
+          <a href="/dashboard.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">แดชบอร์ด</a>
+          <a href="/rules.html" class="text-yellow-400 font-medium text-sm">กฎการใช้งาน</a>
+        </div>
+        <div class="hidden md:flex items-center gap-3">
+          <div id="authButtons" class="flex gap-2">
+            <button onclick="window.location.href='/'" class="btn-outline text-sm !py-2 !px-4">กลับหน้าหลัก</button>
+          </div>
+          <div id="userInfo" class="hidden"></div>
+        </div>
+        <button onclick="document.getElementById('mobileMenu').classList.toggle('hidden')" class="md:hidden text-gray-400">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="mobileMenu" class="md:hidden hidden border-t border-white/5 bg-cyber-dark/95 backdrop-blur px-4 py-4 space-y-2">
+      <a href="/" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">🏠 หน้าหลัก</a>
+      <a href="/topup.html" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">💰 เติมเงิน</a>
+      <a href="/dashboard.html" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">📊 แดชบอร์ด</a>
+      <a href="/rules.html" class="block px-3 py-2 rounded-lg text-yellow-400 bg-yellow-400/5 text-sm">📜 กฎการใช้งาน</a>
+    </div>
+  </nav>
+
+  <!-- CONTENT -->
+  <main class="flex-1 max-w-4xl mx-auto px-4 sm:px-6 py-10 w-full">
+    <h1 class="text-3xl font-bold text-white mb-2">📜 กฎและเงื่อนไขการใช้บริการ</h1>
+    <p class="text-gray-500 text-sm mb-8">โปรดอ่านและทำความเข้าใจก่อนใช้บริการ ChickDDC
+</p>
+
+    <div class="space-y-6">
+
+      <!-- ข้อ 1 -->
+      <div class="cyber-card p-6">
+        <h2 class="text-lg font-bold text-yellow-400 mb-3">1. 📋 เงื่อนไขการเช่าเครื่อง</h2>
+        <ul class="space-y-2 text-sm text-gray-300 list-disc list-inside">
+          <li>ผู้ใช้ต้องสมัครสมาชิกและเข้าสู่ระบบก่อนทำการเช่าเครื่อง</li>
+          <li>ต้องมีเครดิตเพียงพอในบัญชีก่อนทำการเช่า ระบบจะหักเครดิตทันทีเมื่อยืนยันการเช่า</li>
+          <li>ระยะเวลาเช่าจะเริ่มนับทันทีหลังจากยืนยันการเช่า ไม่สามารถหยุดชั่วคราวได้</li>
+          <li>เมื่อเวลาเช่าหมด ระบบจะคืนเครื่องอัตโนมัติ ข้อมูลในเครื่องอาจถูกลบ</li>
+          <li>ไม่สามารถขอคืนเงินหลังจากยืนยันการเช่าแล้ว ยกเว้นกรณีเครื่องมีปัญหาจากทางเรา</li>
+        </ul>
+      </div>
+
+      <!-- ข้อ 2 -->
+      <div class="cyber-card p-6">
+        <h2 class="text-lg font-bold text-yellow-400 mb-3">2. 🔐 ข้อมูล RDP และความปลอดภัย</h2>
+        <ul class="space-y-2 text-sm text-gray-300 list-disc list-inside">
+          <li>ข้อมูลการเชื่อมต่อ RDP (IP, Username, Password) จะแสดงเฉพาะผู้เช่าเท่านั้น</li>
+          <li>ห้ามแชร์ข้อมูล RDP ให้ผู้อื่น หากตรวจพบอาจถูกระงับบัญชี</li>
+          <li>ห้ามเปลี่ยนรหัสผ่านของเครื่อง Remote Desktop</li>
+          <li>ห้ามติดตั้งซอฟต์แวร์ที่เป็นอันตรายหรือมัลแวร์บนเครื่อง</li>
+          <li>ห้ามใช้เครื่องในกิจกรรมที่ผิดกฎหมาย</li>
+        </ul>
+      </div>
+
+      <!-- ข้อ 3 -->
+      <div class="cyber-card p-6">
+        <h2 class="text-lg font-bold text-yellow-400 mb-3">3. 💰 เครดิตและการเติมเงิน</h2>
+        <ul class="space-y-2 text-sm text-gray-300 list-disc list-inside">
+          <li>ระบบเติมเงินเป็นแบบอัตโนมัติ ผ่านการตรวจสอบสลิปโอนเงิน</li>
+          <li>กรุณาโอนเงินตามจำนวนที่ต้องการเติม ระบบจะอ่านยอดจากสลิปอัตโนมัติ</li>
+          <li>สลิปแต่ละใบสามารถใช้ได้ครั้งเดียว ห้ามนำสลิปเดิมมาใช้ซ้ำ</li>
+          <li>หากพบพฤติกรรมฉ้อโกงหรือใช้สลิปปลอม บัญชีจะถูกระงับทันที</li>
+          <li>เครดิตไม่สามารถโอนระหว่างบัญชีได้</li>
+          <li>เครดิตไม่สามารถถอนคืนเป็นเงินสดได้</li>
+        </ul>
+      </div>
+
+      <!-- ข้อ 4 -->
+      <div class="cyber-card p-6">
+        <h2 class="text-lg font-bold text-yellow-400 mb-3">4. ⚠️ ข้อห้ามในการใช้งาน</h2>
+        <ul class="space-y-2 text-sm text-gray-300 list-disc list-inside">
+          <li>ห้ามใช้เครื่องในการโจมตีระบบอื่น (DDoS, Brute Force, Hacking ฯลฯ)</li>
+          <li>ห้ามใช้เครื่องในการส่ง Spam หรือ Phishing</li>
+          <li>ห้ามใช้เครื่องในการเก็บข้อมูลที่ผิดกฎหมาย</li>
+          <li>ห้ามใช้ Bandwidth เกินกว่าที่กำหนด (ถ้ามี)</li>
+          <li>ห้ามนำเครื่องไปให้บุคคลอื่นใช้งานต่อ (Reselling)</li>
+        </ul>
+      </div>
+
+      <!-- ข้อ 5 -->
+      <div class="cyber-card p-6">
+        <h2 class="text-lg font-bold text-yellow-400 mb-3">5. 🛡️ การระงับบัญชี</h2>
+        <ul class="space-y-2 text-sm text-gray-300 list-disc list-inside">
+          <li>ทีมงานขอสงวนสิทธิ์ในการระงับบัญชีที่ละเมิดกฎโดยไม่ต้องแจ้งล่วงหน้า</li>
+          <li>หากบัญชีถูกระงับ เครดิตที่เหลืออยู่จะไม่สามารถขอคืนได้</li>
+          <li>ผู้ใช้สามารถอุทธรณ์ได้ผ่านช่องทางติดต่อที่กำหนด</li>
+        </ul>
+      </div>
+
+      <!-- ข้อ 6 -->
+      <div class="cyber-card p-6">
+        <h2 class="text-lg font-bold text-yellow-400 mb-3">6. 📞 ช่องทางติดต่อ</h2>
+        <ul class="space-y-2 text-sm text-gray-300 list-disc list-inside">
+          <li>หากมีปัญหาเกี่ยวกับการใช้งานเครื่อง กรุณาติดต่อแอดมินผ่านช่องทางที่กำหนด</li>
+          <li>ทีมงานจะพยายามแก้ไขปัญหาให้เร็วที่สุด</li>
+          <li>ในกรณีที่เครื่องมีปัญหาจากทางเรา จะได้รับการชดเชยเวลาหรือเครดิตตามความเหมาะสม</li>
+        </ul>
+      </div>
+
+      <!-- ข้อ 7 -->
+      <div class="cyber-card p-6 border-yellow-400/20">
+        <h2 class="text-lg font-bold neon-text-pink mb-3">7. 📝 การยอมรับเงื่อนไข</h2>
+        <p class="text-sm text-gray-300 leading-relaxed">
+          การสมัครสมาชิกและใช้บริการ ChickDDC
+ ถือว่าคุณได้อ่าน ทำความเข้าใจ
+          และยอมรับกฎและเงื่อนไขทั้งหมดที่ระบุไว้ข้างต้นแล้ว
+          ทีมงานขอสงวนสิทธิ์ในการเปลี่ยนแปลงกฎเหล่านี้ได้ตลอดเวลาโดยไม่ต้องแจ้งล่วงหน้า
+        </p>
+        <p class="text-xs text-gray-500 mt-4">อัปเดตล่าสุด: มิถุนายน 2025</p>
+      </div>
+
+    </div>
+
+    <div class="text-center mt-10">
+      <a href="/" class="btn-neon">🎮 กลับไปเช่าเครื่อง</a>
+    </div>
+  </main>
+
+  <footer class="border-t border-white/5 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 py-6 text-center text-gray-600 text-xs">© 2025 ChickDDC
+</div>
+  </footer>
+
+  <script src="/js/config.js"></script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/auth.js"></script>
+</body>
+</html>

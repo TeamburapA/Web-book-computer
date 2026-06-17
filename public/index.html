@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="บริการเช่าคอมพิวเตอร์ออนไลน์ระบบอัตโนมัติ สเปกสูง สำหรับเล่นเกมและเปิดบอท พร้อมใช้งานทันที">
+  <title>ChickDDC
+ — บริการเช่าคอมพิวเตอร์ออนไลน์</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { prompt: ['Prompt', 'sans-serif'] },
+          colors: {
+            neon: { yellow: '#facc15', pink: '#ec4899' },
+            cyber: { dark: '#0a0a0f', card: '#12121a', surface: '#1a1a2e', border: '#2a2a3e' }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="font-prompt text-gray-300 grid-pattern">
+
+  <!-- ========== NAVBAR ========== -->
+  <nav class="nav-glass sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="flex items-center justify-between h-16">
+        <!-- Logo -->
+        <a href="/" class="flex items-center gap-2">
+          <span class="text-2xl">🖥️</span>
+          <span class="text-xl font-bold gradient-text">ChickDDC</span>
+        </a>
+
+        <!-- Desktop Nav Links -->
+        <div class="hidden md:flex items-center gap-6">
+          <a href="/" class="text-yellow-400 font-medium text-sm hover:text-yellow-300 transition">หน้าหลัก</a>
+          <a href="/topup.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">เติมเงิน</a>
+          <a href="/dashboard.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">แดชบอร์ด</a>
+          <a href="/rules.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">กฎการใช้งาน</a>
+        </div>
+
+        <!-- Desktop Auth / User Info -->
+        <div class="hidden md:flex items-center gap-3">
+          <div id="authButtons" class="flex gap-2">
+            <button onclick="showModal('authModal')" class="btn-outline text-sm !py-2 !px-4">เข้าสู่ระบบ</button>
+            <button onclick="showModal('authModal'); switchAuthTab('register')" class="btn-neon text-sm !py-2 !px-4">สมัครสมาชิก</button>
+          </div>
+          <div id="userInfo" class="hidden"></div>
+        </div>
+
+        <!-- Mobile Menu Button -->
+        <button id="mobileMenuBtn" onclick="toggleMobileMenu()" class="md:hidden text-gray-400 hover:text-white">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Menu -->
+    <div id="mobileMenu" class="md:hidden hidden border-t border-white/5 bg-cyber-dark/95 backdrop-blur">
+      <div class="px-4 py-4 space-y-2">
+        <a href="/" class="block px-3 py-2 rounded-lg text-yellow-400 bg-yellow-400/5 text-sm">🏠 หน้าหลัก</a>
+        <a href="/topup.html" class="block px-3 py-2 rounded-lg text-gray-400 hover:text-white text-sm">💰 เติมเงิน</a>
+        <a href="/dashboard.html" class="block px-3 py-2 rounded-lg text-gray-400 hover:text-white text-sm">📊 แดชบอร์ด</a>
+        <a href="/rules.html" class="block px-3 py-2 rounded-lg text-gray-400 hover:text-white text-sm">📜 กฎการใช้งาน</a>
+        <div class="border-t border-white/5 pt-3 mt-3">
+          <div id="mobileAuthButtons">
+            <button onclick="showModal('authModal')" class="w-full btn-neon text-sm !py-2">เข้าสู่ระบบ / สมัครสมาชิก</button>
+          </div>
+          <div id="mobileUserInfo" class="hidden"></div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========== HERO SECTION ========== -->
+  <section class="hero-gradient py-16 sm:py-24 px-4 relative">
+    <div class="max-w-4xl mx-auto text-center relative z-10">
+      <div class="inline-block mb-4 px-4 py-1 rounded-full border border-yellow-400/20 bg-yellow-400/5">
+        <span class="text-yellow-400 text-xs font-medium">⚡ ระบบอัตโนมัติ — พร้อมใช้งานทันที</span>
+      </div>
+      <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold mb-6 leading-tight">
+        <span class="text-white">บริการเช่า</span><br>
+        <span class="gradient-text">คอมพิวเตอร์ออนไลน์</span>
+      </h1>
+      <p class="text-gray-400 text-base sm:text-lg max-w-2xl mx-auto mb-8 leading-relaxed">
+        เครื่องสเปกสูงระดับพรีเมียม สำหรับเล่นเกมและเปิดบอท<br class="hidden sm:block">
+        เติมเงินอัตโนมัติ — เช่าได้ทันที — ไม่ต้องรอแอดมิน
+      </p>
+      <div class="flex flex-col sm:flex-row gap-3 justify-center">
+        <a href="#machines" class="btn-neon text-center">🎮 ดูเครื่องทั้งหมด</a>
+        <a href="/topup.html" class="btn-pink text-center">💰 เติมเงินเลย</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FILTER BAR ========== -->
+  <section id="machines" class="max-w-7xl mx-auto px-4 sm:px-6 pt-10 pb-4">
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div>
+        <h2 class="text-2xl font-bold text-white">เครื่องคอมพิวเตอร์ให้เช่า</h2>
+        <p class="text-gray-500 text-sm mt-1">เลือกเครื่องที่ต้องการแล้วเริ่มใช้งานได้ทันที</p>
+      </div>
+      <div class="flex gap-2 flex-wrap" id="filterBar">
+        <button class="filter-btn active" onclick="filterMachines('all')">📋 ทั้งหมด</button>
+        <button class="filter-btn" onclick="filterMachines('gaming')">🎮 สายเกมมิ่ง</button>
+        <button class="filter-btn" onclick="filterMachines('bot')">🤖 สายเปิดบอท</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== MACHINE GRID ========== -->
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 pb-20">
+    <div id="machineGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 mt-6">
+      <!-- Machine cards loaded dynamically -->
+    </div>
+  </section>
+
+  <!-- ========== AUTH MODAL ========== -->
+  <div id="authModal" class="modal-overlay">
+    <div class="modal-content !max-w-md">
+      <!-- Tabs -->
+      <div class="flex border-b border-white/10 mb-6">
+        <button id="loginTab" onclick="switchAuthTab('login')" class="flex-1 pb-3 text-sm font-semibold border-b-2 text-yellow-400 border-yellow-400 transition">เข้าสู่ระบบ</button>
+        <button id="registerTab" onclick="switchAuthTab('register')" class="flex-1 pb-3 text-sm font-semibold border-b-2 text-gray-500 border-transparent transition">สมัครสมาชิก</button>
+      </div>
+
+      <!-- Login Pane -->
+      <div id="loginPane">
+        <form id="loginForm" class="space-y-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Username</label>
+            <input id="loginUsername" type="text" class="cyber-input" placeholder="กรอก Username ของคุณ" autocomplete="username" required>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Password</label>
+            <input id="loginPassword" type="password" class="cyber-input" placeholder="กรอกรหัสผ่าน" autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="btn-neon w-full !py-3">เข้าสู่ระบบ</button>
+        </form>
+        <p class="text-center text-gray-500 text-xs mt-4">ยังไม่มีบัญชี? <button onclick="switchAuthTab('register')" class="text-yellow-400 hover:underline">สมัครเลย</button></p>
+      </div>
+
+      <!-- Register Pane -->
+      <div id="registerPane" class="hidden">
+        <form id="registerForm" class="space-y-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Username</label>
+            <input id="regUsername" type="text" class="cyber-input" placeholder="ตั้ง Username (3 ตัวอักษรขึ้นไป)" minlength="3" required>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">Password</label>
+            <input id="regPassword" type="password" class="cyber-input" placeholder="ตั้งรหัสผ่าน (6 ตัวอักษรขึ้นไป)" minlength="6" required>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">ยืนยัน Password</label>
+            <input id="regConfirmPassword" type="password" class="cyber-input" placeholder="กรอกรหัสผ่านอีกครั้ง" minlength="6" required>
+          </div>
+          <button type="submit" class="btn-neon w-full !py-3">สมัครสมาชิก</button>
+        </form>
+        <p class="text-center text-gray-500 text-xs mt-4">มีบัญชีอยู่แล้ว? <button onclick="switchAuthTab('login')" class="text-yellow-400 hover:underline">เข้าสู่ระบบ</button></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== RENTAL MODAL ========== -->
+  <div id="rentalModal" class="modal-overlay">
+    <div class="modal-content !max-w-lg">
+      <h3 class="text-xl font-bold text-white mb-1" id="rentalMachineName">เช่าเครื่อง</h3>
+      <p class="text-gray-500 text-sm mb-6" id="rentalMachineSpec"></p>
+
+      <!-- Duration Options -->
+      <p class="text-sm text-gray-400 mb-3">เลือกระยะเวลาเช่า:</p>
+      <div class="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-6" id="durationOptions"></div>
+
+      <!-- Price Summary -->
+      <div class="bg-white/5 rounded-lg p-4 mb-4 border border-white/5">
+        <div class="flex justify-between items-center">
+          <span class="text-gray-400">ราคารวม</span>
+          <span class="text-2xl font-bold neon-text-yellow" id="rentalTotalPrice">฿ 0.00</span>
+        </div>
+        <div class="flex justify-between items-center mt-2">
+          <span class="text-gray-500 text-xs">เครดิตคงเหลือ</span>
+          <span class="text-gray-400 text-sm" id="rentalUserCredit">฿ 0.00</span>
+        </div>
+      </div>
+
+      <!-- Terms Checkbox -->
+      <label class="flex items-start gap-3 mb-6 cursor-pointer group">
+        <input type="checkbox" id="acceptRules" class="mt-1 w-4 h-4 accent-yellow-400">
+        <span class="text-sm text-gray-400 group-hover:text-gray-300 transition">
+          ข้าพเจ้ายอมรับ <a href="/rules.html" target="_blank" class="text-yellow-400 hover:underline">กฎและเงื่อนไขการใช้บริการ</a>
+        </span>
+      </label>
+
+      <!-- Buttons -->
+      <div class="flex gap-3">
+        <button onclick="hideModal('rentalModal')" class="btn-outline flex-1">ยกเลิก</button>
+        <button onclick="confirmRental()" id="confirmRentalBtn" class="btn-neon flex-1">⚡ ยืนยันเช่าเครื่อง</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== CREDIT NOT ENOUGH MODAL ========== -->
+  <div id="creditModal" class="modal-overlay">
+    <div class="modal-content !max-w-sm text-center">
+      <div class="text-5xl mb-4">💸</div>
+      <h3 class="text-xl font-bold text-white mb-2">เครดิตไม่เพียงพอ</h3>
+      <p class="text-gray-400 text-sm mb-2">คุณต้องการ <span class="text-yellow-400 font-bold" id="creditRequired">฿ 0</span></p>
+      <p class="text-gray-400 text-sm mb-6">เครดิตปัจจุบัน <span class="text-red-400 font-bold" id="creditCurrent">฿ 0</span></p>
+      <div class="flex gap-3">
+        <button onclick="hideModal('creditModal')" class="btn-outline flex-1">ปิด</button>
+        <a href="/topup.html" class="btn-pink flex-1 text-center">💰 เติมเงินเลย</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="border-t border-white/5 bg-cyber-dark/80">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-10">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">🖥️</span>
+          <span class="font-bold gradient-text">ChickDDC
+</span>
+        </div>
+        <p class="text-gray-600 text-xs">© 2025 ChickDDC
+ — บริการเช่าคอมพิวเตอร์ออนไลน์ระบบอัตโนมัติ</p>
+        <div class="flex gap-4">
+          <a href="/rules.html" class="text-gray-500 text-xs hover:text-yellow-400 transition">กฎการใช้งาน</a>
+          <a href="/topup.html" class="text-gray-500 text-xs hover:text-yellow-400 transition">เติมเงิน</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="/js/config.js"></script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/machines.js"></script>
+
+  <script>
+    function toggleMobileMenu() {
+      document.getElementById('mobileMenu').classList.toggle('hidden');
+    }
+  </script>
+</body>
+</html>

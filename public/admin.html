@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel — ChickDDC</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { fontFamily: { prompt: ['Prompt','sans-serif'] }, colors: { neon: { yellow: '#facc15', pink: '#ec4899' }, cyber: { dark: '#0a0a0f', card: '#12121a', surface: '#1a1a2e', border: '#2a2a3e' } } } }
+    }
+  </script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="font-prompt text-gray-300 grid-pattern min-h-screen flex flex-col">
+
+  <!-- NAVBAR -->
+  <nav class="nav-glass sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="flex items-center justify-between h-16">
+        <a href="/" class="flex items-center gap-2">
+          <span class="text-2xl">🖥️</span>
+          <span class="text-xl font-bold gradient-text">ChickDDC</span>
+          <span class="text-xs bg-pink-500/20 text-pink-400 px-2 py-0.5 rounded-full border border-pink-500/30 ml-2">ADMIN</span>
+        </a>
+        <div class="hidden md:flex items-center gap-6">
+          <a href="/" class="text-gray-400 text-sm hover:text-yellow-400 transition">หน้าหลัก</a>
+          <a href="/dashboard.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">แดชบอร์ด</a>
+          <a href="/admin.html" class="text-yellow-400 font-medium text-sm">แอดมิน</a>
+        </div>
+        <div class="hidden md:flex items-center gap-3">
+          <div id="authButtons" class="hidden"></div>
+          <div id="userInfo" class="hidden"></div>
+        </div>
+        <button onclick="document.getElementById('mobileMenu').classList.toggle('hidden')" class="md:hidden text-gray-400">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="mobileMenu" class="md:hidden hidden border-t border-white/5 bg-cyber-dark/95 backdrop-blur px-4 py-4 space-y-2">
+      <a href="/" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">🏠 หน้าหลัก</a>
+      <a href="/dashboard.html" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">📊 แดชบอร์ด</a>
+      <a href="/admin.html" class="block px-3 py-2 rounded-lg text-yellow-400 bg-yellow-400/5 text-sm">⚡ แอดมิน</a>
+      <div class="border-t border-white/5 pt-3"><div id="mobileAuthButtons" class="hidden"></div><div id="mobileUserInfo" class="hidden"></div></div>
+    </div>
+  </nav>
+
+  <!-- ACCESS DENIED -->
+  <div id="accessDenied" class="hidden flex-1 flex items-center justify-center">
+    <div class="text-center">
+      <div class="text-6xl mb-4">🚫</div>
+      <h2 class="text-2xl font-bold text-white mb-2">ไม่มีสิทธิ์เข้าถึง</h2>
+      <p class="text-gray-500 mb-6">เฉพาะแอดมินเท่านั้นที่สามารถเข้าหน้านี้ได้</p>
+      <a href="/" class="btn-neon">กลับหน้าหลัก</a>
+    </div>
+  </div>
+
+  <!-- ADMIN CONTENT -->
+  <main id="adminContent" class="hidden flex-1 max-w-7xl mx-auto px-4 sm:px-6 py-8 w-full">
+
+    <h1 class="text-3xl font-bold text-white mb-6">⚡ Admin Panel</h1>
+
+    <!-- Stats Overview -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8" id="adminStats">
+      <!-- Filled by JS -->
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex gap-1 mb-0 overflow-x-auto pb-0">
+      <button class="tab-btn active" onclick="switchAdminTab('machines')" id="tab-machines">🖥️ จัดการเครื่อง</button>
+      <button class="tab-btn" onclick="switchAdminTab('rentals')" id="tab-rentals">📜 ประวัติเช่า</button>
+      <button class="tab-btn" onclick="switchAdminTab('topups')" id="tab-topups">💰 ประวัติเติมเงิน</button>
+      <button class="tab-btn" onclick="switchAdminTab('users')" id="tab-users">👤 จัดการผู้ใช้</button>
+    </div>
+
+    <!-- Tab Content -->
+    <div class="cyber-card p-6 rounded-tl-none">
+
+      <!-- MACHINES TAB -->
+      <div id="panel-machines">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-bold text-white">จัดการเครื่องคอมพิวเตอร์</h2>
+          <button onclick="showAddMachineModal()" class="btn-neon text-sm !py-2 !px-4">+ เพิ่มเครื่องใหม่</button>
+        </div>
+        <div class="overflow-x-auto" id="adminMachineList">
+          <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
+        </div>
+      </div>
+
+      <!-- RENTALS TAB -->
+      <div id="panel-rentals" class="hidden">
+        <h2 class="text-lg font-bold text-white mb-4">ประวัติการเช่าทั้งระบบ</h2>
+        <div class="overflow-x-auto" id="adminRentalList">
+          <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
+        </div>
+      </div>
+
+      <!-- TOPUPS TAB -->
+      <div id="panel-topups" class="hidden">
+        <h2 class="text-lg font-bold text-white mb-4">ประวัติเติมเงินอัตโนมัติ</h2>
+        <div class="overflow-x-auto" id="adminTopupList">
+          <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
+        </div>
+      </div>
+
+      <!-- USERS TAB -->
+      <div id="panel-users" class="hidden">
+        <h2 class="text-lg font-bold text-white mb-4">จัดการผู้ใช้งานและยอดเงิน</h2>
+        <div class="overflow-x-auto" id="adminUserList">
+          <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ADD/EDIT MACHINE MODAL -->
+  <div id="machineFormModal" class="modal-overlay">
+    <div class="modal-content !max-w-2xl">
+      <h3 class="text-xl font-bold text-white mb-6" id="machineFormTitle">เพิ่มเครื่องใหม่</h3>
+      <form id="machineForm" class="space-y-4">
+        <input type="hidden" id="mf_id">
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">ชื่อเครื่อง *</label>
+            <input id="mf_name" class="cyber-input" placeholder="เช่น CYBER-GAME-01" required>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">ประเภท *</label>
+            <select id="mf_category" class="cyber-input">
+              <option value="gaming">🎮 สายเกมมิ่ง</option>
+              <option value="bot">🤖 สายเปิดบอท</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">CPU</label>
+            <input id="mf_cpu" class="cyber-input" placeholder="Intel Core i9-14900K">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">RAM</label>
+            <input id="mf_ram" class="cyber-input" placeholder="64GB DDR5">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">SSD</label>
+            <input id="mf_ssd" class="cyber-input" placeholder="2TB NVMe Gen4">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">GPU</label>
+            <input id="mf_gpu" class="cyber-input" placeholder="NVIDIA RTX 4090 24GB">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">OS</label>
+            <input id="mf_os" class="cyber-input" placeholder="Windows 11 Pro">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">ราคา/ชม. (฿) *</label>
+            <input id="mf_price_hour" type="number" step="0.01" class="cyber-input" placeholder="25.00" required>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">ราคา/วัน (฿) *</label>
+            <input id="mf_price_day" type="number" step="0.01" class="cyber-input" placeholder="400.00" required>
+          </div>
+        </div>
+
+        <div class="border-t border-white/5 pt-4 mt-4">
+          <p class="text-sm text-gray-400 mb-3">📡 ข้อมูล RDP Connection</p>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">RDP IP</label>
+              <input id="mf_rdp_ip" class="cyber-input" placeholder="103.xx.xx.xx">
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">RDP Username</label>
+              <input id="mf_rdp_user" class="cyber-input" placeholder="administrator">
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">RDP Password</label>
+              <input id="mf_rdp_pass" class="cyber-input" placeholder="password">
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">URL รูปเครื่อง (ไม่บังคับ)</label>
+          <input id="mf_image" class="cyber-input" placeholder="https://...">
+        </div>
+
+        <div class="flex gap-3 pt-2">
+          <button type="button" onclick="hideModal('machineFormModal')" class="btn-outline flex-1">ยกเลิก</button>
+          <button type="submit" class="btn-neon flex-1" id="machineFormSubmitBtn">💾 บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- EDIT USER CREDIT MODAL -->
+  <div id="userCreditModal" class="modal-overlay">
+    <div class="modal-content !max-w-md">
+      <h3 class="text-xl font-bold text-white mb-4">💰 จัดการยอดเงินผู้ใช้</h3>
+      <div class="mb-4 text-sm bg-white/5 p-3 rounded border border-white/10 text-gray-300">
+        <p class="flex justify-between"><span>ผู้ใช้:</span> <span id="uc_username" class="text-pink-400 font-semibold"></span></p>
+        <p class="flex justify-between mt-1"><span>ยอดเงินปัจจุบัน:</span> <span><span id="uc_current_credit" class="text-yellow-400 font-bold"></span> บาท</span></p>
+      </div>
+      <form id="userCreditForm" class="space-y-4">
+        <input type="hidden" id="uc_user_id">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">รูปแบบการปรับปรุง *</label>
+          <select id="uc_action" class="cyber-input" required>
+            <option value="add">➕ เพิ่มเงิน (Add)</option>
+            <option value="deduct">➖ ลดเงิน (Deduct)</option>
+            <option value="set">⚙️ กำหนดเงินใหม่ (Set)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">จำนวนเงิน (บาท) *</label>
+          <input id="uc_amount" type="number" step="0.01" min="0" class="cyber-input" placeholder="0.00" required>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">หมายเหตุ *</label>
+          <input id="uc_note" class="cyber-input" placeholder="เช่น กิจกรรมแจกฟรี, ชดเชยระบบล่ม" required>
+        </div>
+        <div class="flex gap-3 pt-2">
+          <button type="button" onclick="hideModal('userCreditModal')" class="btn-outline flex-1">ยกเลิก</button>
+          <button type="submit" class="btn-neon flex-1" id="userCreditSubmitBtn">💾 ยืนยัน</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <footer class="border-t border-white/5 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 py-6 text-center text-gray-600 text-xs">© 2025 ChickDDC
+ — Admin Panel</div>
+  </footer>
+
+  <script src="/js/config.js"></script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>

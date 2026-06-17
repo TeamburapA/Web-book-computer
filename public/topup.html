@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>เติมเงิน — ChickDDC
+</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { fontFamily: { prompt: ['Prompt', 'sans-serif'] }, colors: { neon: { yellow: '#facc15', pink: '#ec4899' }, cyber: { dark: '#0a0a0f', card: '#12121a', surface: '#1a1a2e', border: '#2a2a3e' } } } }
+    }
+  </script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body class="font-prompt text-gray-300 grid-pattern min-h-screen flex flex-col">
+
+  <!-- NAVBAR -->
+  <nav class="nav-glass sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="flex items-center justify-between h-16">
+        <a href="/" class="flex items-center gap-2">
+          <span class="text-2xl">🖥️</span>
+          <span class="text-xl font-bold gradient-text">ChickDDC</span>
+        </a>
+        <div class="hidden md:flex items-center gap-6">
+          <a href="/" class="text-gray-400 text-sm hover:text-yellow-400 transition">หน้าหลัก</a>
+          <a href="/topup.html" class="text-yellow-400 font-medium text-sm">เติมเงิน</a>
+          <a href="/dashboard.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">แดชบอร์ด</a>
+          <a href="/rules.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">กฎการใช้งาน</a>
+        </div>
+        <div class="hidden md:flex items-center gap-3">
+          <div id="authButtons" class="flex gap-2">
+            <button onclick="showModal('authModal')" class="btn-outline text-sm !py-2 !px-4">เข้าสู่ระบบ</button>
+          </div>
+          <div id="userInfo" class="hidden"></div>
+        </div>
+        <button onclick="document.getElementById('mobileMenu').classList.toggle('hidden')"
+          class="md:hidden text-gray-400">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div id="mobileMenu"
+      class="md:hidden hidden border-t border-white/5 bg-cyber-dark/95 backdrop-blur px-4 py-4 space-y-2">
+      <a href="/" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">🏠 หน้าหลัก</a>
+      <a href="/topup.html" class="block px-3 py-2 rounded-lg text-yellow-400 bg-yellow-400/5 text-sm">💰 เติมเงิน</a>
+      <a href="/dashboard.html" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">📊 แดชบอร์ด</a>
+      <div class="border-t border-white/5 pt-3">
+        <div id="mobileAuthButtons"><button onclick="showModal('authModal')"
+            class="w-full btn-neon text-sm !py-2">เข้าสู่ระบบ</button></div>
+        <div id="mobileUserInfo" class="hidden"></div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- CONTENT -->
+  <main class="flex-1 max-w-4xl mx-auto px-4 sm:px-6 py-10 w-full">
+    <h1 class="text-3xl font-bold text-white mb-2">💰 เติมเงินเข้าระบบ</h1>
+    <p class="text-gray-500 text-sm mb-8">อัปโหลดสลิปโอนเงิน — ระบบจะตรวจสอบและเติมเครดิตให้อัตโนมัติ</p>
+
+    <div class="grid md:grid-cols-2 gap-8">
+      <!-- QR Code / ข้อมูลโอนเงิน -->
+      <div class="cyber-card p-6">
+        <h2 class="text-lg font-bold text-white mb-4">📱 ข้อมูลการโอนเงิน</h2>
+
+        <!-- QR Code Placeholder -->
+       <div class="bg-white rounded-2xl p-6 mx-auto w-80 h-80 flex items-center justify-center mb-8 shadow-inner">
+    <img
+      src="promppay_Nat.jpg"
+      alt="QR PromptPay"
+      class="w-full h-full object-contain"
+    />
+  </div>
+
+        <div class="space-y-3 text-sm">
+          <div class="flex justify-between p-3 bg-white/5 rounded-lg">
+            <span class="text-gray-400">ธนาคาร</span>
+            <span class="text-white font-semibold">กสิกรไทย (KBANK)</span>
+          </div>
+          <div class="flex justify-between p-3 bg-white/5 rounded-lg">
+            <span class="text-gray-400">เลขบัญชี</span>
+            <span class="text-yellow-400 font-mono font-bold">075-8-27415-2</span>
+          </div>
+          <div class="flex justify-between p-3 bg-white/5 rounded-lg">
+            <span class="text-gray-400">ชื่อบัญชี</span>
+            <span class="text-white">นายณัฐกรณ์ อินธิสาร</span>
+          </div>
+        </div>
+
+        <div class="mt-4 p-3 bg-yellow-400/5 border border-yellow-400/20 rounded-lg">
+          <p class="text-xs text-yellow-400">⚠️ หมายเหตุ: กรุณาโอนเงินตามจำนวนที่ต้องการเติม
+            แล้วอัปโหลดสลิปในช่องด้านข้าง ระบบจะตรวจสอบอัตโนมัติ</p>
+        </div>
+      </div>
+
+      <!-- Upload Slip -->
+      <div class="cyber-card p-6">
+        <h2 class="text-lg font-bold text-white mb-4">🧾 อัปโหลดสลิปโอนเงิน</h2>
+
+        <div id="uploadZone" class="upload-zone mb-4" onclick="document.getElementById('slipFile').click()">
+          <input type="file" id="slipFile" accept="image/*" class="hidden" onchange="previewSlip(event)">
+          <div id="uploadContent">
+            <div class="text-4xl mb-3">📎</div>
+            <p class="text-gray-400 text-sm">คลิกหรือลากไฟล์มาวางที่นี่</p>
+            <p class="text-gray-600 text-xs mt-1">รองรับ JPG, PNG (ไม่เกิน 5MB)</p>
+          </div>
+          <div id="previewContent" class="hidden">
+            <img id="slipPreview" class="max-h-48 mx-auto rounded-lg">
+            <p class="text-sm text-gray-400 mt-2" id="slipFileName"></p>
+          </div>
+        </div>
+
+        <button onclick="submitSlip()" id="submitSlipBtn" class="btn-neon w-full !py-3 mb-4">
+          🔍 ส่งสลิปตรวจสอบ
+        </button>
+
+        <!-- Result -->
+        <div id="slipResult" class="hidden"></div>
+
+        <!-- Current Credit -->
+        <div class="mt-4 p-3 bg-white/5 rounded-lg flex justify-between items-center">
+          <span class="text-gray-400 text-sm">เครดิตปัจจุบัน</span>
+          <span class="neon-text-yellow font-bold text-lg" id="currentCredit">฿ 0.00</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Topup History -->
+    <div class="cyber-card mt-8 p-6">
+      <h2 class="text-lg font-bold text-white mb-4">📜 ประวัติเติมเงิน</h2>
+      <div class="overflow-x-auto" id="topupHistory">
+        <div class="text-center py-10 text-gray-500">กรุณาเข้าสู่ระบบเพื่อดูประวัติ</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- AUTH MODAL (simplified) -->
+  <div id="authModal" class="modal-overlay">
+    <div class="modal-content !max-w-md">
+      <div class="flex border-b border-white/10 mb-6">
+        <button id="loginTab" onclick="switchAuthTab('login')"
+          class="flex-1 pb-3 text-sm font-semibold border-b-2 text-yellow-400 border-yellow-400">เข้าสู่ระบบ</button>
+        <button id="registerTab" onclick="switchAuthTab('register')"
+          class="flex-1 pb-3 text-sm font-semibold border-b-2 text-gray-500 border-transparent">สมัครสมาชิก</button>
+      </div>
+      <div id="loginPane">
+        <form id="loginForm" class="space-y-4">
+          <div><label class="block text-sm text-gray-400 mb-1">Username</label><input id="loginUsername" type="text"
+              class="cyber-input" required></div>
+          <div><label class="block text-sm text-gray-400 mb-1">Password</label><input id="loginPassword" type="password"
+              class="cyber-input" required></div>
+          <button type="submit" class="btn-neon w-full !py-3">เข้าสู่ระบบ</button>
+        </form>
+      </div>
+      <div id="registerPane" class="hidden">
+        <form id="registerForm" class="space-y-4">
+          <div><label class="block text-sm text-gray-400 mb-1">Username</label><input id="regUsername" type="text"
+              class="cyber-input" minlength="3" required></div>
+          <div><label class="block text-sm text-gray-400 mb-1">Password</label><input id="regPassword" type="password"
+              class="cyber-input" minlength="6" required></div>
+          <div><label class="block text-sm text-gray-400 mb-1">ยืนยัน Password</label><input id="regConfirmPassword"
+              type="password" class="cyber-input" minlength="6" required></div>
+          <button type="submit" class="btn-neon w-full !py-3">สมัครสมาชิก</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="border-t border-white/5 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 py-6 text-center text-gray-600 text-xs">© 2025 ChickDDC
+</div>
+  </footer>
+
+  <script src="/js/config.js"></script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/topup.js"></script>
+</body>
+
+</html>

@@ -25,31 +25,7 @@ const supabase = createClient(
 // --- Middleware ---
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-
-// --- Throttled Auto-Release for Serverless (Self-Healing) ---
-let lastReleaseCheck = 0;
-const RELEASE_CHECK_INTERVAL = 30000; // 30 วินาที
-
-async function throttledAutoRelease() {
-  const now = Date.now();
-  if (now - lastReleaseCheck > RELEASE_CHECK_INTERVAL) {
-    lastReleaseCheck = now;
-    await autoReleaseExpiredMachines();
-  }
-}
-
-// รัน auto-release ปลดล็อกเครื่องหมดเวลาแบบอัตโนมัติเมื่อมีการเรียกใช้ API
-app.use(async (req, res, next) => {
-  if (req.path.startsWith('/api')) {
-    try {
-      await throttledAutoRelease();
-    } catch (err) {
-      console.error('Auto-release error in middleware:', err);
-    }
-  }
-  next();
-});
+app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
 // --- Multer (รับไฟล์สลิปในหน่วยความจำ) ---
 const upload = multer({
@@ -892,33 +868,8 @@ async function autoReleaseExpiredMachines() {
   }
 }
 
-// รันทุก 30 วินาที (เฉพาะกรณีที่รัน Server ตรง ๆ ไม่ผ่าน Serverless)
-if (require.main === module) {
-  setInterval(autoReleaseExpiredMachines, 30000);
-}
-
-// =============================================
-// CRON ENDPOINT — สำหรับให้ Vercel Cron Job เรียกใช้
-// =============================================
-app.get('/api/cron/auto-release', async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization;
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (cronSecret) {
-      const token = authHeader ? authHeader.split(' ')[1] : req.query.secret;
-      if (token !== cronSecret) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-    }
-
-    await autoReleaseExpiredMachines();
-    res.json({ success: true, message: 'Auto-release run successfully' });
-  } catch (err) {
-    console.error('Cron auto-release error:', err);
-    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการปลดล็อกเครื่องอัตโนมัติ' });
-  }
-});
+// รันทุก 30 วินาที
+setInterval(autoReleaseExpiredMachines, 30000);
 
 // =============================================
 // SPA FALLBACK — ส่ง HTML สำหรับ route ที่ไม่ใช่ API
@@ -930,21 +881,16 @@ app.get('*', (req, res) => {
 });
 
 // =============================================
-// START SERVER OR EXPORT FOR SERVERLESS
+// START SERVER
 // =============================================
-if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`
+app.listen(PORT, () => {
+  console.log(`
   ╔═══════════════════════════════════════════════╗
   ║  🖥️  ระบบเช่าคอมพิวเตอร์ออนไลน์              ║
   ║  🌐  http://localhost:${PORT}                    ║
   ║  🎮  Cyberpunk Rental System is ONLINE        ║
   ╚═══════════════════════════════════════════════╝
-    `);
-    // รัน auto-release ครั้งแรกเมื่อ server เริ่ม
-    autoReleaseExpiredMachines();
-  });
-} else {
-  // สำหรับการนำเข้าแอปไปรันบน Serverless เช่น Vercel
-  module.exports = app;
-}
+  `);
+  // รัน auto-release ครั้งแรกเมื่อ server เริ่ม
+  autoReleaseExpiredMachines();
+});

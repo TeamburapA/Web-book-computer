@@ -420,6 +420,7 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
+        image: base64Image,
         base64: base64Image
       })
     });

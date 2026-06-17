@@ -427,8 +427,10 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
     const slipResult = await slipResponse.json();
 
     // --- ตรวจสอบผลลัพธ์จาก EasySlip API ---
-    if (!slipResult.success || !slipResult.data) {
-      const errorMsg = (slipResult.error && slipResult.error.message) || 'สลิปไม่ถูกต้องหรือไม่สามารถอ่าน QR Code ได้';
+    // EasySlip v2 ใช้ success: true ส่วน EasySlip v1 (legacy) ใช้ status: 200
+    const isSuccess = slipResult.success === true || slipResult.status === 200 || slipResult.status === '200';
+    if (!isSuccess || !slipResult.data) {
+      const errorMsg = (slipResult.error && slipResult.error.message) || slipResult.message || 'สลิปไม่ถูกต้องหรือไม่สามารถอ่าน QR Code ได้';
       await supabase.from('topups').insert({
         user_id: req.user.id,
         amount: 0,
@@ -439,7 +441,6 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
       return res.status(400).json({ error: errorMsg });
     }
 
-    // ดึงเลขอ้างอิงทำรายการ (transRef) แบบยืดหยุ่นรองรับ v1 และ v2
     const transRef = slipResult.data.transRef || (slipResult.data.rawSlip && slipResult.data.rawSlip.transRef);
 
     if (!transRef) {

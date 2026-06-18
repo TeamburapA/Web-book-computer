@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS machines (
   rdp_ip TEXT,
   rdp_username TEXT,
   rdp_password TEXT,
+  anydesk_id TEXT,         -- หมายเลข AnyDesk ของเครื่อง
+  anydesk_password TEXT,   -- รหัสผ่าน AnyDesk ของเครื่อง
+  tuya_device_id TEXT,     -- Device ID จาก Tuya Smart สำหรับเปิด/ปิดเครื่อง
   image_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -40,6 +43,11 @@ CREATE TABLE IF NOT EXISTS machines (
 CREATE INDEX idx_machines_status ON machines(status);
 CREATE INDEX idx_machines_category ON machines(category);
 CREATE INDEX idx_machines_current_user ON machines(current_user_id);
+
+-- สำหรับตารางที่มีอยู่แล้ว ให้รันคำสั่งนี้เพิ่มเติม (ถ้าตารางถูกสร้างไว้ก่อนหน้า)
+-- ALTER TABLE machines ADD COLUMN IF NOT EXISTS anydesk_id TEXT;
+-- ALTER TABLE machines ADD COLUMN IF NOT EXISTS anydesk_password TEXT;
+-- ALTER TABLE machines ADD COLUMN IF NOT EXISTS tuya_device_id TEXT;
 
 -- 3. ตาราง Rentals (ประวัติการเช่า)
 CREATE TABLE IF NOT EXISTS rentals (

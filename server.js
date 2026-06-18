@@ -22,6 +22,71 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// --- Tuya Smart API Client ---
+// ใช้ HMAC-SHA256 สำหรับ Signature ตามมาตรฐาน Tuya Open API
+const crypto = require('crypto');
+
+const TUYA_REGION_HOSTS = {
+  us: 'https://openapi.tuyaus.com',
+  eu: 'https://openapi.tuyaeu.com',
+  cn: 'https://openapi.tuyacn.com',
+  in: 'https://openapi.tuyain.com'
+};
+
+const TUYA_HOST = TUYA_REGION_HOSTS[process.env.TUYA_REGION || 'us'];
+const TUYA_CLIENT_ID = process.env.TUYA_CLIENT_ID;
+const TUYA_CLIENT_SECRET = process.env.TUYA_CLIENT_SECRET;
+
+// ดึง Tuya Access Token
+async function getTuyaAccessToken() {
+  const t = Date.now().toString();
+  const str = TUYA_CLIENT_ID + t;
+  const sign = crypto.createHmac('sha256', TUYA_CLIENT_SECRET)
+    .update(str).digest('hex').toUpperCase();
+
+  const res = await fetch(`${TUYA_HOST}/v1.0/token?grant_type=1`, {
+    headers: {
+      'client_id': TUYA_CLIENT_ID,
+      't': t,
+      'sign': sign,
+      'sign_method': 'HMAC-SHA256'
+    }
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.msg || 'Tuya token error');
+  return data.result.access_token;
+}
+
+// ส่งคำสั่ง Tuya (switch_1: true = เปิด, false = ปิด)
+async function sendTuyaCommand(deviceId, switchOn) {
+  const accessToken = await getTuyaAccessToken();
+  const t = Date.now().toString();
+  const method = 'POST';
+  const path = `/v1.0/devices/${deviceId}/commands`;
+  const body = JSON.stringify({ commands: [{ code: 'switch_1', value: switchOn }] });
+  const contentHash = crypto.createHash('sha256').update(body).digest('hex');
+  const stringToSign = [method, contentHash, '', path].join('\n');
+  const str = TUYA_CLIENT_ID + accessToken + t + stringToSign;
+  const sign = crypto.createHmac('sha256', TUYA_CLIENT_SECRET)
+    .update(str).digest('hex').toUpperCase();
+
+  const res = await fetch(`${TUYA_HOST}${path}`, {
+    method,
+    headers: {
+      'client_id': TUYA_CLIENT_ID,
+      'access_token': accessToken,
+      't': t,
+      'sign': sign,
+      'sign_method': 'HMAC-SHA256',
+      'Content-Type': 'application/json'
+    },
+    body
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.msg || 'Tuya command error');
+  return data;
+}
+
 // --- Middleware ---
 app.use(cors());
 app.use(express.json());
@@ -197,12 +262,15 @@ app.get('/api/machines', async (req, res) => {
     const { data, error } = await query;
     if (error) throw error;
 
-    // ซ่อน RDP info จาก response สาธารณะ — จะส่งแยกเฉพาะผู้เช่า
+    // ซ่อนข้อมูลส่วนตัวจาก response สาธารณะ — จะส่งแยกเฉพาะผู้เช่า
     const sanitized = data.map(m => {
       const machine = { ...m };
       delete machine.rdp_ip;
       delete machine.rdp_username;
       delete machine.rdp_password;
+      delete machine.anydesk_id;
+      delete machine.anydesk_password;
+      delete machine.tuya_device_id;
       return machine;
     });
 
@@ -239,6 +307,122 @@ app.get('/api/machines/:id/rdp', authMiddleware, async (req, res) => {
   }
 });
 
+// GET /api/machines/:id/anydesk — ดึงข้อมูล AnyDesk (เฉพาะผู้เช่า)
+app.get('/api/machines/:id/anydesk', authMiddleware, async (req, res) => {
+  try {
+    const { data: machine, error } = await supabase
+      .from('machines')
+      .select('current_user_id, anydesk_id, anydesk_password')
+      .eq('id', req.params.id)
+      .single();
+
+    if (error || !machine) {
+      return res.status(404).json({ error: 'ไม่พบเครื่อง' });
+    }
+    if (machine.current_user_id !== req.user.id) {
+      return res.status(403).json({ error: 'คุณไม่ได้เช่าเครื่องนี้' });
+    }
+
+    res.json({
+      anydesk_id: machine.anydesk_id,
+      anydesk_password: machine.anydesk_password
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'เกิดข้อผิดพลาด' });
+  }
+});
+
+// POST /api/machines/:id/power — เปิด/ปิด/รีสตาร์ทเครื่องผ่าน Tuya (Admin only)
+app.post('/api/machines/:id/power', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { action } = req.body; // 'on' | 'off' | 'restart'
+    if (!['on', 'off', 'restart'].includes(action)) {
+      return res.status(400).json({ error: 'action ต้องเป็น on, off หรือ restart เท่านั้น' });
+    }
+
+    if (!TUYA_CLIENT_ID || !TUYA_CLIENT_SECRET) {
+      return res.status(503).json({ error: 'ระบบ Tuya ยังไม่ได้ตั้งค่า TUYA_CLIENT_ID / TUYA_CLIENT_SECRET' });
+    }
+
+    const { data: machine, error } = await supabase
+      .from('machines')
+      .select('id, name, tuya_device_id')
+      .eq('id', parseInt(req.params.id))
+      .single();
+
+    if (error || !machine) {
+      return res.status(404).json({ error: 'ไม่พบเครื่อง' });
+    }
+    if (!machine.tuya_device_id) {
+      return res.status(400).json({ error: 'เครื่องนี้ยังไม่ได้ตั้งค่า Tuya Device ID' });
+    }
+
+    if (action === 'restart') {
+      // ปิดก่อน 3 วินาที แล้วเปิด
+      await sendTuyaCommand(machine.tuya_device_id, false);
+      await new Promise(r => setTimeout(r, 3000));
+      await sendTuyaCommand(machine.tuya_device_id, true);
+    } else {
+      await sendTuyaCommand(machine.tuya_device_id, action === 'on');
+    }
+
+    const actionLabel = { on: 'เปิดเครื่อง', off: 'ปิดเครื่อง', restart: 'รีสตาร์ทเครื่อง' }[action];
+    console.log(`⚡ Tuya Power [${actionLabel}]: ${machine.name} (${machine.tuya_device_id})`);
+    res.json({ success: true, message: `${actionLabel} ${machine.name} สำเร็จ` });
+  } catch (err) {
+    console.error('Tuya power error:', err);
+    res.status(500).json({ error: err.message || 'ไม่สามารถสั่งงาน Tuya ได้' });
+  }
+});
+
+
+// POST /api/machines/:id/power-user — เปิด/ปิด/รีสตาร์ทเครื่อง (สำหรับผู้เช่าเครื่องนั้นๆ)
+app.post('/api/machines/:id/power-user', authMiddleware, async (req, res) => {
+  try {
+    const { action } = req.body; // 'on' | 'off' | 'restart'
+    if (!['on', 'off', 'restart'].includes(action)) {
+      return res.status(400).json({ error: 'action ต้องเป็น on, off หรือ restart เท่านั้น' });
+    }
+
+    if (!TUYA_CLIENT_ID || !TUYA_CLIENT_SECRET) {
+      return res.status(503).json({ error: 'ระบบ Tuya ยังไม่ได้ตั้งค่า' });
+    }
+
+    const { data: machine, error } = await supabase
+      .from('machines')
+      .select('id, name, tuya_device_id, current_user_id, status')
+      .eq('id', parseInt(req.params.id))
+      .single();
+
+    if (error || !machine) {
+      return res.status(404).json({ error: 'ไม่พบเครื่อง' });
+    }
+
+    // ตรวจสอบว่าเป็นผู้เช่าเครื่องนี้อยู่
+    if (machine.current_user_id !== req.user.id) {
+      return res.status(403).json({ error: 'คุณไม่ได้เช่าเครื่องนี้' });
+    }
+
+    if (!machine.tuya_device_id) {
+      return res.status(400).json({ error: 'เครื่องนี้ยังไม่ได้ตั้งค่า Tuya Device ID' });
+    }
+
+    if (action === 'restart') {
+      await sendTuyaCommand(machine.tuya_device_id, false);
+      await new Promise(r => setTimeout(r, 3000));
+      await sendTuyaCommand(machine.tuya_device_id, true);
+    } else {
+      await sendTuyaCommand(machine.tuya_device_id, action === 'on');
+    }
+
+    const actionLabel = { on: 'เปิดเครื่อง', off: 'ปิดเครื่อง', restart: 'รีสตาร์ทเครื่อง' }[action];
+    console.log(`⚡ Tuya Power [User] [${actionLabel}]: ${machine.name} (${machine.tuya_device_id})`);
+    res.json({ success: true, message: `${actionLabel} ${machine.name} สำเร็จ` });
+  } catch (err) {
+    console.error('Tuya user power error:', err);
+    res.status(500).json({ error: err.message || 'ไม่สามารถสั่งงาน Tuya ได้' });
+  }
+});
 // POST /api/rent — เช่าเครื่อง (Atomic Transaction)
 app.post('/api/rent', authMiddleware, async (req, res) => {
   try {
@@ -359,17 +543,19 @@ app.post('/api/release/:machineId', authMiddleware, async (req, res) => {
     }
 
     // คืนเครื่อง
-    await supabase
+    const { error: machineErr } = await supabase
       .from('machines')
       .update({ status: 'available', current_user_id: null, session_end_time: null })
       .eq('id', machineId);
+    if (machineErr) throw machineErr;
 
     // อัปเดตสถานะ rental
-    await supabase
+    const { error: rentalErr } = await supabase
       .from('rentals')
       .update({ status: 'completed' })
       .eq('machine_id', machineId)
       .eq('status', 'active');
+    if (rentalErr) throw rentalErr;
 
     res.json({ success: true, message: 'คืนเครื่องสำเร็จ' });
   } catch (err) {
@@ -629,7 +815,10 @@ app.get('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res)
 // POST /api/admin/machines — เพิ่มเครื่องใหม่
 app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, category, cpu, ram, ssd, gpu, os, price_per_hour, price_per_day, rdp_ip, rdp_username, rdp_password, image_url } = req.body;
+    const { name, category, cpu, ram, ssd, gpu, os, price_per_hour, price_per_day,
+            rdp_ip, rdp_username, rdp_password,
+            anydesk_id, anydesk_password, tuya_device_id,
+            image_url } = req.body;
 
     if (!name || !category || !price_per_hour || !price_per_day) {
       return res.status(400).json({ error: 'กรุณากรอกข้อมูลที่จำเป็น' });
@@ -642,7 +831,9 @@ app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res
         price_per_hour: parseFloat(price_per_hour),
         price_per_day: parseFloat(price_per_day),
         status: 'available',
-        rdp_ip, rdp_username, rdp_password, image_url
+        rdp_ip, rdp_username, rdp_password,
+        anydesk_id, anydesk_password, tuya_device_id,
+        image_url
       })
       .select()
       .single();
@@ -658,7 +849,10 @@ app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res
 // PUT /api/admin/machines/:id — แก้ไขเครื่อง
 app.put('/api/admin/machines/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, category, cpu, ram, ssd, gpu, os, price_per_hour, price_per_day, rdp_ip, rdp_username, rdp_password, image_url } = req.body;
+    const { name, category, cpu, ram, ssd, gpu, os, price_per_hour, price_per_day,
+            rdp_ip, rdp_username, rdp_password,
+            anydesk_id, anydesk_password, tuya_device_id,
+            image_url } = req.body;
 
     const { data, error } = await supabase
       .from('machines')
@@ -666,7 +860,9 @@ app.put('/api/admin/machines/:id', authMiddleware, adminMiddleware, async (req, 
         name, category, cpu, ram, ssd, gpu, os,
         price_per_hour: parseFloat(price_per_hour),
         price_per_day: parseFloat(price_per_day),
-        rdp_ip, rdp_username, rdp_password, image_url
+        rdp_ip, rdp_username, rdp_password,
+        anydesk_id, anydesk_password, tuya_device_id,
+        image_url
       })
       .eq('id', parseInt(req.params.id))
       .select()
@@ -918,3 +1114,4 @@ app.listen(PORT, () => {
   // รัน auto-release ครั้งแรกเมื่อ server เริ่ม
   autoReleaseExpiredMachines();
 });
+

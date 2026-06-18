@@ -104,7 +104,8 @@ async function loadAdminMachines() {
             <th>สเปก</th>
             <th>ราคา</th>
             <th>สถานะ</th>
-            <th>RDP IP</th>
+            <th>AnyDesk</th>
+            <th>ไฟฟ้า (Tuya)</th>
             <th>จัดการ</th>
           </tr>
         </thead>
@@ -122,7 +123,16 @@ async function loadAdminMachines() {
                 <span class="text-yellow-400 font-bold">฿${formatCurrency(m.price_per_hour)}</span><span class="text-gray-500 text-xs">/ชม.</span>
               </td>
               <td>${statusBadge(m.status)}</td>
-              <td class="text-xs font-mono text-gray-500">${m.rdp_ip || '-'}</td>
+              <td class="text-xs font-mono text-cyan-400">${m.anydesk_id || '-'}</td>
+              <td class="whitespace-nowrap">
+                ${m.tuya_device_id ? `
+                  <div class="flex gap-1">
+                    <button onclick="powerMachine(${m.id}, 'on')" class="px-2 py-1 text-xs bg-green-500/10 text-green-400 rounded border border-green-500/20 hover:bg-green-500/20 transition" title="เปิดเครื่อง">⚡เปิด</button>
+                    <button onclick="powerMachine(${m.id}, 'off')" class="px-2 py-1 text-xs bg-red-500/10 text-red-400 rounded border border-red-500/20 hover:bg-red-500/20 transition" title="ปิดเครื่อง">❌ปิด</button>
+                    <button onclick="powerMachine(${m.id}, 'restart')" class="px-2 py-1 text-xs bg-orange-500/10 text-orange-400 rounded border border-orange-500/20 hover:bg-orange-500/20 transition" title="รีสตาร์ท">🔄</button>
+                  </div>
+                ` : '<span class="text-gray-600 text-xs">ยังไม่ตั้งค่า</span>'}
+              </td>
               <td class="whitespace-nowrap">
                 <div class="flex gap-1">
                   <button onclick="editMachine(${m.id})" class="px-2 py-1 text-xs bg-blue-500/10 text-blue-400 rounded border border-blue-500/20 hover:bg-blue-500/20 transition" title="แก้ไข">✏️</button>
@@ -180,9 +190,9 @@ async function editMachine(id) {
   document.getElementById('mf_os').value = m.os || '';
   document.getElementById('mf_price_hour').value = m.price_per_hour;
   document.getElementById('mf_price_day').value = m.price_per_day;
-  document.getElementById('mf_rdp_ip').value = m.rdp_ip || '';
-  document.getElementById('mf_rdp_user').value = m.rdp_username || '';
-  document.getElementById('mf_rdp_pass').value = m.rdp_password || '';
+  document.getElementById('mf_anydesk_id').value = m.anydesk_id || '';
+  document.getElementById('mf_anydesk_pass').value = m.anydesk_password || '';
+  document.getElementById('mf_tuya_id').value = m.tuya_device_id || '';
   document.getElementById('mf_image').value = m.image_url || '';
   showModal('machineFormModal');
 }
@@ -208,9 +218,9 @@ function setupMachineForm() {
       os: document.getElementById('mf_os').value,
       price_per_hour: document.getElementById('mf_price_hour').value,
       price_per_day: document.getElementById('mf_price_day').value,
-      rdp_ip: document.getElementById('mf_rdp_ip').value,
-      rdp_username: document.getElementById('mf_rdp_user').value,
-      rdp_password: document.getElementById('mf_rdp_pass').value,
+      anydesk_id: document.getElementById('mf_anydesk_id').value,
+      anydesk_password: document.getElementById('mf_anydesk_pass').value,
+      tuya_device_id: document.getElementById('mf_tuya_id').value,
       image_url: document.getElementById('mf_image').value
     };
 
@@ -261,6 +271,23 @@ async function deleteMachine(id, name) {
     await loadAdminStats();
   } catch (err) {
     showToast(err.error || 'ไม่สามารถลบเครื่องได้', 'error');
+  }
+}
+
+// --- Power Control via Tuya ---
+async function powerMachine(id, action) {
+  const actionLabel = { on: 'เปิดเครื่อง', off: 'ปิดเครื่อง', restart: 'รีสตาร์ทเครื่อง' }[action];
+  if (!confirm(`⚡ ต้องการ "${actionLabel}" ใช่หรือไม่?`)) return;
+
+  try {
+    showToast(`กำลังสั่ง ${actionLabel}...`, 'info');
+    const data = await apiFetch(`/api/machines/${id}/power`, {
+      method: 'POST',
+      body: { action }
+    });
+    showToast(data.message || `${actionLabel} สำเร็จ`, 'success');
+  } catch (err) {
+    showToast(err.error || `ไม่สามารถ${actionLabel}ได้`, 'error');
   }
 }
 
@@ -382,8 +409,8 @@ async function loadAdminUsers() {
               <td class="text-yellow-400 font-bold">฿${formatCurrency(u.credit)}</td>
               <td>
                 <span class="px-2 py-0.5 text-xs rounded-full ${
-                  u.role === 'admin' 
-                    ? 'bg-pink-500/20 text-pink-400 border border-pink-500/30' 
+                  u.role === 'admin'
+                    ? 'bg-pink-500/20 text-pink-400 border border-pink-500/30'
                     : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                 }">
                   ${u.role}
@@ -391,7 +418,7 @@ async function loadAdminUsers() {
               </td>
               <td class="text-xs whitespace-nowrap">${formatDate(u.created_at)}</td>
               <td class="whitespace-nowrap">
-                <button onclick="openUserCreditModal('${u.id}', '${u.username}', ${u.credit})" 
+                <button onclick="openUserCreditModal('${u.id}', '${u.username}', ${u.credit})"
                         class="px-3 py-1 text-xs bg-yellow-500/10 text-yellow-400 rounded border border-yellow-500/20 hover:bg-yellow-500/20 transition flex items-center gap-1 font-semibold">
                   💰 จัดการเงิน
                 </button>

@@ -92,14 +92,14 @@ function renderMachines(machines) {
           </div>
 
           ${m.status === 'in_use' && isMyMachine ? `
-            <!-- Countdown + RDP (for current renter) -->
+            <!-- Countdown + AnyDesk (for current renter) -->
             <div class="mt-3 p-3 rounded-lg bg-yellow-400/5 border border-yellow-400/20">
               <div class="flex items-center justify-between mb-2">
                 <span class="text-xs text-gray-400">⏰ เหลือเวลา</span>
                 <span class="countdown" id="countdown-${m.id}" data-end="${m.session_end_time}">--:--:--</span>
               </div>
-              <div id="rdp-info-${m.id}" class="mt-2">
-                <button onclick="loadRdpInfo(${m.id})" class="text-xs text-yellow-400 hover:underline">📡 แสดงข้อมูล RDP</button>
+              <div id="anydesk-info-${m.id}" class="mt-2">
+                <button onclick="loadAnydeskInfo(${m.id})" class="text-xs text-cyan-400 hover:underline">🖥️ แสดงข้อมูล AnyDesk</button>
               </div>
             </div>
             <button onclick="releaseMachine(${m.id})" class="mt-3 w-full btn-outline text-sm !py-2 border-red-500/30 text-red-400 hover:!border-red-500 hover:!text-red-400">🔓 คืนเครื่อง</button>
@@ -280,43 +280,66 @@ async function confirmRental() {
   }
 }
 
-// --- โหลด RDP Info ---
-async function loadRdpInfo(machineId) {
-  const container = document.getElementById(`rdp-info-${machineId}`);
+// --- โหลด AnyDesk Info ---
+async function loadAnydeskInfo(machineId) {
+  const container = document.getElementById(`anydesk-info-${machineId}`);
   if (!container) return;
 
   try {
-    const data = await apiFetch(`/api/machines/${machineId}/rdp`);
+    const data = await apiFetch(`/api/machines/${machineId}/anydesk`);
     container.innerHTML = `
       <div class="space-y-2 text-xs">
         <div class="flex justify-between items-center p-2 bg-black/30 rounded">
-          <span class="text-gray-400">IP:</span>
-          <span class="text-white font-mono">${data.rdp_ip}</span>
+          <span class="text-gray-400">AnyDesk ID:</span>
+          <div class="flex items-center gap-1">
+            <span class="text-white font-mono font-bold">${data.anydesk_id || '-'}</span>
+            ${data.anydesk_id ? `<button onclick="copyToClipboard('${data.anydesk_id}', 'คัดลอกเลข AnyDesk แล้ว!')" class="text-cyan-400 hover:text-cyan-300 text-xs ml-1" title="คัดลอก">📋</button>` : ''}
+          </div>
         </div>
         <div class="flex justify-between items-center p-2 bg-black/30 rounded">
-          <span class="text-gray-400">User:</span>
-          <span class="text-white font-mono">${data.rdp_username}</span>
-        </div>
-        <div class="flex justify-between items-center p-2 bg-black/30 rounded">
-          <span class="text-gray-400">Pass:</span>
-          <span class="text-white font-mono rdp-password" id="rdp-pass-${machineId}">••••••••</span>
-          <button onclick="toggleRdpPass(${machineId}, '${data.rdp_password}')" class="text-yellow-400 hover:text-yellow-300 ml-2">👁</button>
+          <span class="text-gray-400">AnyDesk Pass:</span>
+          <div class="flex items-center gap-1">
+            <span class="text-white font-mono" id="anydesk-pass-${machineId}">••••••••</span>
+            <button onclick="toggleAnydeskPass(${machineId}, '${data.anydesk_password || ''}')" class="text-cyan-400 hover:text-cyan-300 ml-1">👁</button>
+            ${data.anydesk_password ? `<button onclick="copyToClipboard('${data.anydesk_password}', 'คัดลอกรหัส AnyDesk แล้ว!')" class="text-cyan-400 hover:text-cyan-300 text-xs ml-1" title="คัดลอก">📋</button>` : ''}
+          </div>
         </div>
       </div>
     `;
   } catch (err) {
-    container.innerHTML = `<p class="text-xs text-red-400">${err.error || 'ไม่สามารถโหลดข้อมูล RDP'}</p>`;
+    container.innerHTML = `<p class="text-xs text-red-400">${err.error || 'ไม่สามารถโหลดข้อมูล AnyDesk'}</p>`;
   }
 }
 
-// --- Toggle RDP Password ---
-function toggleRdpPass(machineId, realPass) {
-  const el = document.getElementById(`rdp-pass-${machineId}`);
+// --- Toggle AnyDesk Password ---
+function toggleAnydeskPass(machineId, realPass) {
+  const el = document.getElementById(`anydesk-pass-${machineId}`);
   if (el.textContent === '••••••••') {
     el.textContent = realPass;
   } else {
     el.textContent = '••••••••';
   }
+}
+
+// คัดลอกข้อความไปยัง Clipboard
+function copyToClipboard(text, successMsg) {
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(successMsg || 'คัดลอกแล้ว!', 'success');
+  }).catch(() => {
+    // Fallback for non-secure contexts
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      showToast(successMsg || 'คัดลอกแล้ว!', 'success');
+    } catch (err) {
+      showToast('ไม่สามารถคัดลอกได้', 'error');
+    }
+    document.body.removeChild(textArea);
+  });
 }
 
 // --- คืนเครื่อง ---

@@ -98,26 +98,59 @@ async function loadActiveRentals() {
               </div>
             </div>
 
-            <!-- RDP Info -->
-            <div class="space-y-1.5 text-xs">
-              <div class="flex justify-between p-2 bg-black/30 rounded">
-                <span class="text-gray-500">IP:</span>
-                <span class="text-white font-mono">${m.rdp_ip || '-'}</span>
-              </div>
-              <div class="flex justify-between p-2 bg-black/30 rounded">
-                <span class="text-gray-500">User:</span>
-                <span class="text-white font-mono">${m.rdp_username || '-'}</span>
-              </div>
-              <div class="flex justify-between items-center p-2 bg-black/30 rounded">
-                <span class="text-gray-500">Pass:</span>
-                <div class="flex items-center gap-2">
-                  <span class="text-white font-mono" id="dash-rdp-pass-${m.id}">••••••••</span>
-                  <button onclick="toggleDashRdpPass(${m.id}, '${m.rdp_password || ''}')" class="text-yellow-400 hover:text-yellow-300">👁</button>
+            <!-- AnyDesk Info — แสดงเลข AnyDesk และรหัสผ่าน -->
+            <div class="mb-3 p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/30">
+              <p class="text-xs text-cyan-400 font-bold uppercase tracking-wider mb-2">🖥️ AnyDesk Remote</p>
+              <div class="space-y-2">
+                <!-- AnyDesk ID -->
+                <div class="flex justify-between items-center p-2 rounded-lg bg-cyan-900/30 border border-cyan-500/20">
+                  <span class="text-xs text-gray-400">เลข AnyDesk</span>
+                  <div class="flex items-center gap-2">
+                    <span class="text-cyan-300 font-mono font-bold text-base tracking-widest">${m.anydesk_id || '-'}</span>
+                    ${m.anydesk_id ? `<button onclick="copyToClipboard('${m.anydesk_id}', 'คัดลอกเลข AnyDesk แล้ว!')"
+                            class="text-cyan-500 hover:text-cyan-300 transition text-xs" title="คัดลอก">📋</button>` : ''}
+                  </div>
+                </div>
+                <!-- AnyDesk Password -->
+                <div class="flex justify-between items-center p-2 rounded-lg bg-cyan-900/30 border border-cyan-500/20">
+                  <span class="text-xs text-gray-400">รหัสผ่าน AnyDesk</span>
+                  <div class="flex items-center gap-2">
+                    <span class="text-cyan-300 font-mono text-sm" id="dash-ad-pass-${m.id}">••••••••</span>
+                    <button onclick="toggleDashAnyDeskPass(${m.id}, '${m.anydesk_password || ''}')"
+                            class="text-cyan-400 hover:text-cyan-300 transition" title="แสดง/ซ่อน">👁</button>
+                    ${m.anydesk_password ? `<button onclick="copyToClipboard('${m.anydesk_password || ''}', 'คัดลอกรหัส AnyDesk แล้ว!')"
+                            class="text-cyan-500 hover:text-cyan-300 transition text-xs" title="คัดลอก">📋</button>` : ''}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <button onclick="dashReleaseMachine(${m.id})" class="mt-3 w-full btn-outline text-xs !py-2 border-red-500/30 text-red-400 hover:!border-red-500">🔓 คืนเครื่อง</button>
+            <!-- Power Control Buttons — เปิด/ปิด/รีสตาร์ทผ่าน Tuya -->
+            ${m.tuya_device_id ? `
+            <div class="mb-3 p-3 rounded-xl bg-white/5 border border-white/10">
+              <p class="text-xs text-gray-400 font-semibold mb-2">⚡ ควบคุมเครื่อง (Tuya Smart)</p>
+              <div class="grid grid-cols-3 gap-2">
+                <button onclick="dashPowerMachine(${m.id}, 'on', this)"
+                        class="flex flex-col items-center gap-1 py-2 px-1 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 hover:bg-green-500/20 hover:border-green-500 transition text-xs font-semibold">
+                  <span class="text-lg">🟢</span>
+                  <span>เปิดเครื่อง</span>
+                </button>
+                <button onclick="dashPowerMachine(${m.id}, 'off', this)"
+                        class="flex flex-col items-center gap-1 py-2 px-1 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 transition text-xs font-semibold">
+                  <span class="text-lg">🔴</span>
+                  <span>ปิดเครื่อง</span>
+                </button>
+                <button onclick="dashPowerMachine(${m.id}, 'restart', this)"
+                        class="flex flex-col items-center gap-1 py-2 px-1 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-400 hover:bg-orange-500/20 hover:border-orange-500 transition text-xs font-semibold">
+                  <span class="text-lg">🔄</span>
+                  <span>รีสตาร์ท</span>
+                </button>
+              </div>
+            </div>
+            ` : ''}
+
+            <button onclick="dashReleaseMachine(${m.id})" class="mt-1 w-full btn-outline text-xs !py-2 border-red-500/30 text-red-400 hover:!border-red-500">🔓 คืนเครื่อง</button>
+
           </div>
         `).join('')}
       </div>
@@ -155,9 +188,50 @@ function startDashCountdown(machineId, endTimeStr) {
   dashCountdownIntervals[machineId] = setInterval(update, 1000);
 }
 
-function toggleDashRdpPass(machineId, realPass) {
-  const el = document.getElementById(`dash-rdp-pass-${machineId}`);
-  el.textContent = el.textContent === '••••••••' ? realPass : '••••••••';
+
+
+function toggleDashAnyDeskPass(machineId, realPass) {
+  const el = document.getElementById('dash-ad-pass-' + machineId);
+  if (el.dataset.hidden !== 'false') { el.textContent = realPass; el.dataset.hidden = 'false'; }
+  else { el.textContent = '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'; el.dataset.hidden = 'true'; }
+}
+
+
+// คัดลอกข้อความไปยัง Clipboard
+function copyToClipboard(text, successMsg) {
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(successMsg || 'คัดลอกแล้ว!', 'success');
+  }).catch(() => {
+    showToast('ไม่สามารถคัดลอกได้', 'error');
+  });
+}
+
+// ควบคุมเปิด/ปิด/รีสตาร์ทเครื่องผ่าน Tuya
+async function dashPowerMachine(machineId, action, btn) {
+  const actionLabel = { on: 'เปิดเครื่อง', off: 'ปิดเครื่อง', restart: 'รีสตาร์ทเครื่อง' }[action];
+  const confirmMsg = action === 'restart'
+    ? `ต้องการรีสตาร์ทเครื่องใช่หรือไม่?\n(เครื่องจะปิดแล้วเปิดใหม่ใน 3 วินาที)`
+    : `ต้องการ${actionLabel}ใช่หรือไม่?`;
+
+  if (!confirm(confirmMsg)) return;
+
+  const originalHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="text-lg">⏳</span><span>กำลัง...</span>`;
+
+  try {
+    const data = await apiFetch(`/api/machines/${machineId}/power-user`, {
+      method: 'POST',
+      body: { action }
+    });
+    showToast(data.message || `${actionLabel}สำเร็จ`, 'success');
+  } catch (err) {
+    showToast(err.error || `ไม่สามารถ${actionLabel}ได้`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHTML;
+  }
 }
 
 async function dashReleaseMachine(machineId) {
@@ -252,3 +326,6 @@ async function loadDashTopupHistory() {
     container.innerHTML = `<div class="text-center py-8 text-red-400">❌ โหลดข้อมูลไม่สำเร็จ</div>`;
   }
 }
+
+
+

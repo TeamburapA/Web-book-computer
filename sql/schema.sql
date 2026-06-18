@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS machines (
   os TEXT,
   price_per_hour NUMERIC(10,2) NOT NULL,
   price_per_day NUMERIC(10,2) NOT NULL,
+  price_per_week NUMERIC(10,2) DEFAULT 0,
+  price_per_month NUMERIC(10,2) DEFAULT 0,
   status TEXT DEFAULT 'available' CHECK (status IN ('available', 'in_use', 'maintenance')),
   current_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   session_end_time TIMESTAMPTZ,

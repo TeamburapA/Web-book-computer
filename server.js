@@ -366,10 +366,8 @@ app.post('/api/machines/:id/power', authMiddleware, adminMiddleware, async (req,
     }
 
     if (action === 'restart') {
-      // ปิดก่อน 3 วินาที แล้วเปิด
+      // Force Reset: ส่งคำสั่ง switch_1 เป็น false เพื่อสั่งรีเซ็ตคอมพิวเตอร์ทันที
       await sendTuyaCommand(machine.tuya_device_id, false);
-      await new Promise(r => setTimeout(r, 3000));
-      await sendTuyaCommand(machine.tuya_device_id, true);
     } else {
       await sendTuyaCommand(machine.tuya_device_id, action === 'on');
     }
@@ -416,9 +414,8 @@ app.post('/api/machines/:id/power-user', authMiddleware, async (req, res) => {
     }
 
     if (action === 'restart') {
+      // Force Reset: ส่งคำสั่ง switch_1 เป็น false เพื่อสั่งรีเซ็ตคอมพิวเตอร์ทันที
       await sendTuyaCommand(machine.tuya_device_id, false);
-      await new Promise(r => setTimeout(r, 3000));
-      await sendTuyaCommand(machine.tuya_device_id, true);
     } else {
       await sendTuyaCommand(machine.tuya_device_id, action === 'on');
     }
@@ -434,9 +431,9 @@ app.post('/api/machines/:id/power-user', authMiddleware, async (req, res) => {
 // POST /api/rent — เช่าเครื่อง (Atomic Transaction)
 app.post('/api/rent', authMiddleware, async (req, res) => {
   try {
-    const { machine_id, duration_hours } = req.body;
+    const { machine_id, duration_hours, rent_unit, rent_quantity } = req.body;
 
-    if (!machine_id || !duration_hours) {
+    if (!machine_id || (!duration_hours && (!rent_unit || !rent_quantity))) {
       return res.status(400).json({ error: 'กรุณาเลือกเครื่องและระยะเวลา' });
     }
 
@@ -452,14 +449,35 @@ app.post('/api/rent', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'เครื่องนี้ไม่ว่างในขณะนี้' });
     }
 
-    // คำนวณราคา
+    // คำนวณราคาและระยะเวลา
     let total_price;
-    if (duration_hours >= 24) {
-      const days = Math.floor(duration_hours / 24);
-      const remainingHours = duration_hours % 24;
-      total_price = (days * parseFloat(machine.price_per_day)) + (remainingHours * parseFloat(machine.price_per_hour));
+    let computed_duration_hours = duration_hours;
+
+    if (rent_unit && rent_quantity) {
+      const qty = parseInt(rent_quantity) || 1;
+      if (rent_unit === 'day') {
+        computed_duration_hours = qty * 24;
+        total_price = qty * parseFloat(machine.price_per_day);
+      } else if (rent_unit === 'week') {
+        computed_duration_hours = qty * 168;
+        const weekPrice = parseFloat(machine.price_per_week);
+        total_price = qty * (weekPrice > 0 ? weekPrice : parseFloat(machine.price_per_day) * 7);
+      } else if (rent_unit === 'month') {
+        computed_duration_hours = qty * 720;
+        const monthPrice = parseFloat(machine.price_per_month);
+        total_price = qty * (monthPrice > 0 ? monthPrice : parseFloat(machine.price_per_day) * 30);
+      } else {
+        return res.status(400).json({ error: 'หน่วยเวลาเช่าไม่ถูกต้อง' });
+      }
     } else {
-      total_price = duration_hours * parseFloat(machine.price_per_hour);
+      // Fallback
+      if (computed_duration_hours >= 24) {
+        const days = Math.floor(computed_duration_hours / 24);
+        const remainingHours = computed_duration_hours % 24;
+        total_price = (days * parseFloat(machine.price_per_day)) + (remainingHours * parseFloat(machine.price_per_hour));
+      } else {
+        total_price = computed_duration_hours * parseFloat(machine.price_per_hour);
+      }
     }
 
     // ตรวจสอบเครดิต
@@ -487,7 +505,7 @@ app.post('/api/rent', authMiddleware, async (req, res) => {
     if (creditErr) throw creditErr;
 
     // อัปเดตสถานะเครื่อง
-    const sessionEnd = new Date(Date.now() + duration_hours * 60 * 60 * 1000);
+    const sessionEnd = new Date(Date.now() + computed_duration_hours * 60 * 60 * 1000);
     const { error: machUpdate } = await supabase
       .from('machines')
       .update({
@@ -499,6 +517,16 @@ app.post('/api/rent', authMiddleware, async (req, res) => {
 
     if (machUpdate) throw machUpdate;
 
+    // เปิดเครื่องคอมพิวเตอร์อัตโนมัติ (Tuya Smart Plug/Switch)
+    if (machine.tuya_device_id && TUYA_CLIENT_ID && TUYA_CLIENT_SECRET) {
+      try {
+        await sendTuyaCommand(machine.tuya_device_id, true);
+        console.log(`⚡ Auto-start machine: ${machine.name} (${machine.tuya_device_id}) success.`);
+      } catch (tuyaErr) {
+         console.error(`⚠️ Auto-start machine failed: ${machine.name}:`, tuyaErr);
+      }
+    }
+
     // บันทึกประวัติการเช่า
     const { error: rentalErr } = await supabase
       .from('rentals')
@@ -506,7 +534,7 @@ app.post('/api/rent', authMiddleware, async (req, res) => {
         user_id: req.user.id,
         machine_id: machine_id,
         machine_name: machine.name,
-        duration_hours: duration_hours,
+        duration_hours: computed_duration_hours,
         total_price: total_price,
         started_at: new Date().toISOString(),
         ended_at: sessionEnd.toISOString(),
@@ -520,7 +548,7 @@ app.post('/api/rent', authMiddleware, async (req, res) => {
       message: `เช่าเครื่อง ${machine.name} สำเร็จ!`,
       rental: {
         machine_name: machine.name,
-        duration_hours,
+        duration_hours: computed_duration_hours,
         total_price,
         session_end_time: sessionEnd.toISOString(),
         new_credit: newCredit
@@ -531,6 +559,158 @@ app.post('/api/rent', authMiddleware, async (req, res) => {
     res.status(500).json({ error: 'เกิดข้อผิดพลาดในการเช่าเครื่อง' });
   }
 });
+
+// POST /api/rent/extend — ต่อเวลาเช่าเครื่อง
+app.post('/api/rent/extend', authMiddleware, async (req, res) => {
+  try {
+    const { machine_id, rent_unit, rent_quantity } = req.body;
+
+    if (!machine_id || !rent_unit || !rent_quantity) {
+      return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
+    }
+
+    const machineId = parseInt(machine_id);
+    const qty = parseInt(rent_quantity);
+
+    if (isNaN(machineId) || isNaN(qty) || qty <= 0) {
+      return res.status(400).json({ error: 'ข้อมูลไม่ถูกต้อง' });
+    }
+
+    // ดึงข้อมูลเครื่อง
+    const { data: machine } = await supabase
+      .from('machines')
+      .select('*')
+      .eq('id', machineId)
+      .single();
+
+    if (!machine) return res.status(404).json({ error: 'ไม่พบเครื่องนี้' });
+    
+    // ตรวจสอบสิทธิ์: ต้องเป็นผู้เช่าปัจจุบันของเครื่องและเครื่องต้องอยู่ในสถานะ in_use
+    if (machine.current_user_id !== req.user.id || machine.status !== 'in_use') {
+      return res.status(403).json({ error: 'คุณไม่ได้เช่าเครื่องนี้อยู่ หรือเครื่องหมดเวลาเช่าแล้ว' });
+    }
+
+    // คำนวณราคาและระยะเวลา
+    let total_price;
+    let computed_duration_hours;
+
+    if (rent_unit === 'day') {
+      computed_duration_hours = qty * 24;
+      total_price = qty * parseFloat(machine.price_per_day);
+    } else if (rent_unit === 'week') {
+      computed_duration_hours = qty * 168;
+      const weekPrice = parseFloat(machine.price_per_week);
+      total_price = qty * (weekPrice > 0 ? weekPrice : parseFloat(machine.price_per_day) * 7);
+    } else if (rent_unit === 'month') {
+      computed_duration_hours = qty * 720;
+      const monthPrice = parseFloat(machine.price_per_month);
+      total_price = qty * (monthPrice > 0 ? monthPrice : parseFloat(machine.price_per_day) * 30);
+    } else {
+      return res.status(400).json({ error: 'หน่วยเวลาเช่าไม่ถูกต้อง' });
+    }
+
+    // ดึงข้อมูลเครดิตผู้ใช้
+    const { data: user } = await supabase
+      .from('users')
+      .select('credit')
+      .eq('id', req.user.id)
+      .single();
+
+    if (parseFloat(user.credit) < total_price) {
+      return res.status(400).json({
+        error: 'เครดิตไม่เพียงพอ',
+        required: total_price,
+        current: parseFloat(user.credit)
+      });
+    }
+
+    // หักเครดิต
+    const newCredit = parseFloat(user.credit) - total_price;
+    const { error: creditErr } = await supabase
+      .from('users')
+      .update({ credit: newCredit })
+      .eq('id', req.user.id);
+
+    if (creditErr) throw creditErr;
+
+    // คำนวณเวลาสิ้นสุดเซสชันใหม่
+    const baseTime = machine.session_end_time ? new Date(machine.session_end_time) : new Date();
+    const newSessionEnd = new Date(baseTime.getTime() + computed_duration_hours * 60 * 60 * 1000);
+
+    // อัปเดตเครื่อง
+    const { error: machUpdate } = await supabase
+      .from('machines')
+      .update({
+        session_end_time: newSessionEnd.toISOString()
+      })
+      .eq('id', machineId);
+
+    if (machUpdate) throw machUpdate;
+
+    // สั่งเปิดเครื่อง Tuya
+    if (machine.tuya_device_id && TUYA_CLIENT_ID && TUYA_CLIENT_SECRET) {
+      try {
+        await sendTuyaCommand(machine.tuya_device_id, true);
+        console.log(`⚡ Auto-start machine (Extend): ${machine.name} (${machine.tuya_device_id}) success.`);
+      } catch (tuyaErr) {
+         console.error(`⚠️ Auto-start machine failed during extension: ${machine.name}:`, tuyaErr);
+      }
+    }
+
+    // อัปเดต rentals record
+    const { data: activeRental } = await supabase
+      .from('rentals')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .eq('machine_id', machineId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (activeRental) {
+      const { error: rentalErr } = await supabase
+        .from('rentals')
+        .update({
+          duration_hours: activeRental.duration_hours + computed_duration_hours,
+          total_price: parseFloat(activeRental.total_price) + total_price,
+          ended_at: newSessionEnd.toISOString()
+        })
+        .eq('id', activeRental.id);
+      if (rentalErr) throw rentalErr;
+    } else {
+      const { error: rentalErr } = await supabase
+        .from('rentals')
+        .insert({
+          user_id: req.user.id,
+          machine_id: machineId,
+          machine_name: machine.name,
+          duration_hours: computed_duration_hours,
+          total_price: total_price,
+          started_at: new Date().toISOString(),
+          ended_at: newSessionEnd.toISOString(),
+          status: 'active'
+        });
+      if (rentalErr) throw rentalErr;
+    }
+
+    res.json({
+      success: true,
+      message: `ต่อเวลาเช่าเครื่อง ${machine.name} สำเร็จ!`,
+      rental: {
+        machine_name: machine.name,
+        duration_hours: computed_duration_hours,
+        total_price,
+        session_end_time: newSessionEnd.toISOString(),
+        new_credit: newCredit
+      }
+    });
+  } catch (err) {
+    console.error('Extend rent error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการต่อเวลาเช่าเครื่อง' });
+  }
+});
+
 
 // POST /api/release/:machineId — คืนเครื่อง (หรือหมดเวลาอัตโนมัติ)
 app.post('/api/release/:machineId', authMiddleware, async (req, res) => {
@@ -550,10 +730,20 @@ app.post('/api/release/:machineId', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'คุณไม่มีสิทธิ์คืนเครื่องนี้' });
     }
 
-    // คืนเครื่อง
+    // ปิดเครื่องคอมพิวเตอร์อัตโนมัติ (Tuya Smart Plug/Switch)
+    if (machine.tuya_device_id && TUYA_CLIENT_ID && TUYA_CLIENT_SECRET) {
+      try {
+        await sendTuyaCommand(machine.tuya_device_id, false);
+        console.log(`🔌 Auto-shutdown machine: ${machine.name} (${machine.tuya_device_id}) success.`);
+      } catch (tuyaErr) {
+        console.error(`⚠️ Auto-shutdown machine failed: ${machine.name}:`, tuyaErr);
+      }
+    }
+
+    // คืนเครื่อง -> ย้ายไปยังสถานะ clearing (กำลังเคลียข้อมูล)
     const { error: machineErr } = await supabase
       .from('machines')
-      .update({ status: 'available', current_user_id: null, session_end_time: null })
+      .update({ status: 'clearing', current_user_id: null, session_end_time: null })
       .eq('id', machineId);
     if (machineErr) throw machineErr;
 
@@ -777,6 +967,78 @@ app.get('/api/my-active-machines', authMiddleware, async (req, res) => {
 });
 
 // =============================================
+// SETTINGS MANAGEMENT (Facebook & Discord Links)
+// =============================================
+const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+const defaultSettings = {
+  facebook_url: 'https://facebook.com',
+  discord_url: 'https://discord.com'
+};
+
+async function getSettings() {
+  try {
+    const { data, error } = await supabase
+      .from('settings')
+      .select('*');
+    if (!error && data && data.length > 0) {
+      const settings = {};
+      data.forEach(item => {
+        settings[item.key] = item.value;
+      });
+      return { ...defaultSettings, ...settings };
+    }
+  } catch (err) {
+    console.log('Database settings table not ready, using fallback.');
+  }
+
+  // Fallback to local settings.json
+  try {
+    const fs = require('fs');
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const content = fs.readFileSync(SETTINGS_FILE, 'utf8');
+      return { ...defaultSettings, ...JSON.parse(content) };
+    }
+  } catch (err) {
+    console.error('Error reading settings.json:', err);
+  }
+  return defaultSettings;
+}
+
+async function updateSettings(settings) {
+  let dbSuccess = false;
+  try {
+    const upsertData = Object.entries(settings).map(([key, value]) => ({ key, value }));
+    const { error } = await supabase
+      .from('settings')
+      .upsert(upsertData);
+    if (!error) {
+      dbSuccess = true;
+    }
+  } catch (err) {
+    console.log('Database settings table not ready, skipping DB update.');
+  }
+
+  // Always write to local settings.json as fallback
+  try {
+    const fs = require('fs');
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Error writing settings.json:', err);
+    if (!dbSuccess) throw new Error('ไม่สามารถบันทึกการตั้งค่าได้');
+  }
+}
+
+// GET /api/settings — ดึงข้อมูลลิ้งก์ติดต่อ (Public)
+app.get('/api/settings', async (req, res) => {
+  try {
+    const settings = await getSettings();
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ error: 'ไม่สามารถดึงข้อมูลการตั้งค่าได้' });
+  }
+});
+
+// =============================================
 // ADMIN ROUTES
 // =============================================
 
@@ -823,7 +1085,7 @@ app.get('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res)
 // POST /api/admin/machines — เพิ่มเครื่องใหม่
 app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, category, cpu, ram, ssd, gpu, os, price_per_hour, price_per_day,
+    const { name, category, cpu, ram, ssd, gpu, os, price_per_hour, price_per_day, price_per_week, price_per_month,
             rdp_ip, rdp_username, rdp_password,
             anydesk_id, anydesk_password, tuya_device_id,
             image_url } = req.body;
@@ -838,6 +1100,8 @@ app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res
         name, category, cpu, ram, ssd, gpu, os,
         price_per_hour: parseFloat(price_per_hour),
         price_per_day: parseFloat(price_per_day),
+        price_per_week: parseFloat(price_per_week || 0),
+        price_per_month: parseFloat(price_per_month || 0),
         status: 'available',
         rdp_ip: rdp_ip || null,
         rdp_username: rdp_username || null,
@@ -859,7 +1123,7 @@ app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res
 // PUT /api/admin/machines/:id — แก้ไขเครื่อง
 app.put('/api/admin/machines/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, category, cpu, ram, ssd, gpu, os, price_per_hour, price_per_day,
+    const { name, category, cpu, ram, ssd, gpu, os, price_per_hour, price_per_day, price_per_week, price_per_month,
             rdp_ip, rdp_username, rdp_password,
             anydesk_id, anydesk_password, tuya_device_id,
             image_url } = req.body;
@@ -870,6 +1134,8 @@ app.put('/api/admin/machines/:id', authMiddleware, adminMiddleware, async (req, 
         name, category, cpu, ram, ssd, gpu, os,
         price_per_hour: parseFloat(price_per_hour),
         price_per_day: parseFloat(price_per_day),
+        price_per_week: parseFloat(price_per_week || 0),
+        price_per_month: parseFloat(price_per_month || 0),
         rdp_ip: rdp_ip || null,
         rdp_username: rdp_username || null,
         rdp_password: rdp_password || null,
@@ -1067,6 +1333,20 @@ app.put('/api/admin/users/:id/credit', authMiddleware, adminMiddleware, async (r
   }
 });
 
+// PUT /api/admin/settings — แก้ไขลิ้งก์ติดต่อ (Admin only)
+app.put('/api/admin/settings', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { facebook_url, discord_url } = req.body;
+    if (!facebook_url || !discord_url) {
+      return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
+    }
+    await updateSettings({ facebook_url, discord_url });
+    res.json({ success: true, message: 'บันทึกการตั้งค่าสำเร็จ' });
+  } catch (err) {
+    console.error('Update settings error:', err);
+    res.status(500).json({ error: err.message || 'ไม่สามารถบันทึกการตั้งค่าได้' });
+  }
+});
 
 // =============================================
 // AUTO-RELEASE: ตรวจสอบเครื่องหมดเวลาอัตโนมัติ
@@ -1076,15 +1356,25 @@ async function autoReleaseExpiredMachines() {
     const now = new Date().toISOString();
     const { data: expired } = await supabase
       .from('machines')
-      .select('id, name')
+      .select('id, name, tuya_device_id')
       .eq('status', 'in_use')
       .lt('session_end_time', now);
 
     if (expired && expired.length > 0) {
       for (const machine of expired) {
+        // ปิดเครื่องคอมพิวเตอร์อัตโนมัติ (Tuya Smart Plug/Switch)
+        if (machine.tuya_device_id && TUYA_CLIENT_ID && TUYA_CLIENT_SECRET) {
+          try {
+            await sendTuyaCommand(machine.tuya_device_id, false);
+            console.log(`🔌 Auto-shutdown machine (Expired): ${machine.name} (${machine.tuya_device_id}) success.`);
+          } catch (tuyaErr) {
+            console.error(`⚠️ Auto-shutdown machine failed: ${machine.name}:`, tuyaErr);
+          }
+        }
+
         await supabase
           .from('machines')
-          .update({ status: 'available', current_user_id: null, session_end_time: null })
+          .update({ status: 'clearing', current_user_id: null, session_end_time: null })
           .eq('id', machine.id);
 
         await supabase
@@ -1093,7 +1383,7 @@ async function autoReleaseExpiredMachines() {
           .eq('machine_id', machine.id)
           .eq('status', 'active');
 
-        console.log(`🔄 Auto-released: ${machine.name} (ID: ${machine.id})`);
+        console.log(`🔄 Auto-released to clearing: ${machine.name} (ID: ${machine.id})`);
       }
     }
   } catch (err) {

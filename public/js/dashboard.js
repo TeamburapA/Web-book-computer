@@ -3,6 +3,12 @@
 // =============================================
 
 let dashCountdownIntervals = {};
+let activeMachines = [];
+let selectedExtendMachineId = null;
+let currentExtendUnit = 'day';
+let currentExtendQuantity = 1;
+let selectedExtendDuration = null;
+
 
 document.addEventListener('DOMContentLoaded', () => {
   initDashboard();
@@ -52,6 +58,8 @@ async function loadActiveRentals() {
   try {
     const data = await apiFetch('/api/my-active-machines');
     const machines = data.machines;
+    activeMachines = machines;
+
 
     document.getElementById('dashActiveMachines').textContent = machines.length;
 
@@ -77,7 +85,6 @@ async function loadActiveRentals() {
             <div class="flex items-start justify-between mb-3">
               <div>
                 <h3 class="font-bold text-white">${m.name}</h3>
-                <p class="text-xs text-gray-500">${m.category === 'gaming' ? '🎮 สายเกมมิ่ง' : '🤖 สายเปิดบอท'}</p>
               </div>
               <span class="badge badge-in-use">กำลังใช้งาน</span>
             </div>
@@ -125,32 +132,29 @@ async function loadActiveRentals() {
               </div>
             </div>
 
-            <!-- Power Control Buttons — เปิด/ปิด/รีสตาร์ทผ่าน Tuya -->
+            <!-- Power Control Buttons — เปิด/ปิดผ่าน Tuya -->
             ${m.tuya_device_id ? `
-            <div class="mb-3 p-3 rounded-xl bg-white/5 border border-white/10">
+            <div class="mb-3 p-3 rounded-xl bg-white/5 border border-white/10" id="power-control-${m.id}">
               <p class="text-xs text-gray-400 font-semibold mb-2">⚡ ควบคุมเครื่อง (Tuya Smart)</p>
-              <div class="grid grid-cols-3 gap-2">
-                <button onclick="dashPowerMachine(${m.id}, 'on', this)"
+              <div class="grid grid-cols-2 gap-2">
+                <button onclick="dashPowerMachine(${m.id}, 'on', this)" id="btn-power-on-${m.id}"
                         class="flex flex-col items-center gap-1 py-2 px-1 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 hover:bg-green-500/20 hover:border-green-500 transition text-xs font-semibold">
                   <span class="text-lg">🟢</span>
                   <span>เปิดเครื่อง</span>
                 </button>
-                <button onclick="dashPowerMachine(${m.id}, 'off', this)"
+                <button onclick="dashPowerMachine(${m.id}, 'off', this)" id="btn-power-off-${m.id}"
                         class="flex flex-col items-center gap-1 py-2 px-1 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 transition text-xs font-semibold">
                   <span class="text-lg">🔴</span>
                   <span>ปิดเครื่อง</span>
-                </button>
-                <button onclick="dashPowerMachine(${m.id}, 'restart', this)"
-                        class="flex flex-col items-center gap-1 py-2 px-1 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-400 hover:bg-orange-500/20 hover:border-orange-500 transition text-xs font-semibold">
-                  <span class="text-lg">🔄</span>
-                  <span>รีสตาร์ท</span>
                 </button>
               </div>
             </div>
             ` : ''}
 
-            <button onclick="dashReleaseMachine(${m.id})" class="mt-1 w-full btn-outline text-xs !py-2 border-red-500/30 text-red-400 hover:!border-red-500">🔓 คืนเครื่อง</button>
-
+            <div class="grid grid-cols-2 gap-2 mt-2">
+              <button onclick="openExtendModal(${m.id})" class="btn-neon text-xs !py-2 flex items-center justify-center gap-1">➕ ต่อเวลา</button>
+              <button onclick="dashReleaseMachine(${m.id})" class="btn-outline text-xs !py-2 border-red-500/30 text-red-400 hover:!border-red-500 flex items-center justify-center gap-1">🔓 คืนเครื่อง</button>
+            </div>
           </div>
         `).join('')}
       </div>
@@ -160,6 +164,11 @@ async function loadActiveRentals() {
     machines.forEach(m => {
       if (m.session_end_time) {
         startDashCountdown(m.id, m.session_end_time);
+      }
+      // Resume power lock if active in localStorage
+      const lockUntil = parseInt(localStorage.getItem(`power_lock_until_${m.id}`) || '0', 10);
+      if (lockUntil > Date.now()) {
+        runPowerButtonsTimer(m.id);
       }
     });
 
@@ -217,10 +226,11 @@ async function dashPowerMachine(machineId, action, btn) {
   if (!confirm(confirmMsg)) return;
 
   const originalHTML = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = `<span class="text-lg">⏳</span><span>กำลัง...</span>`;
 
   try {
+    // Lock all power buttons for this machine for 2 minutes (120000 ms) immediately to prevent spamming
+    startPowerLock(machineId, 120000);
+
     const data = await apiFetch(`/api/machines/${machineId}/power-user`, {
       method: 'POST',
       body: { action }
@@ -228,9 +238,19 @@ async function dashPowerMachine(machineId, action, btn) {
     showToast(data.message || `${actionLabel}สำเร็จ`, 'success');
   } catch (err) {
     showToast(err.error || `ไม่สามารถ${actionLabel}ได้`, 'error');
+    // On failure, release the lock immediately so user can retry
+    localStorage.removeItem(`power_lock_until_${machineId}`);
+    if (powerLockIntervals[machineId]) {
+      clearInterval(powerLockIntervals[machineId]);
+      delete powerLockIntervals[machineId];
+    }
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = originalHTML;
+    // Only restore button state if the button is not locked
+    const lockUntil = parseInt(localStorage.getItem(`power_lock_until_${machineId}`) || '0', 10);
+    if (lockUntil <= Date.now()) {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+    }
   }
 }
 
@@ -273,7 +293,12 @@ async function loadRentalHistory() {
           ${data.rentals.map(r => `
             <tr>
               <td class="font-semibold text-white whitespace-nowrap">${r.machine_name}</td>
-              <td>${r.duration_hours >= 24 ? Math.floor(r.duration_hours/24) + ' วัน' : r.duration_hours + ' ชม.'}</td>
+              <td>${
+                r.duration_hours % 720 === 0 ? (r.duration_hours / 720) + ' เดือน' :
+                r.duration_hours % 168 === 0 ? (r.duration_hours / 168) + ' สัปดาห์' :
+                r.duration_hours >= 24 ? Math.floor(r.duration_hours / 24) + ' วัน' :
+                r.duration_hours + ' ชม.'
+              }</td>
               <td class="text-yellow-400 font-bold">฿ ${formatCurrency(r.total_price)}</td>
               <td class="text-xs whitespace-nowrap">${formatDate(r.started_at)}</td>
               <td class="text-xs whitespace-nowrap">${formatDate(r.ended_at)}</td>
@@ -327,5 +352,253 @@ async function loadDashTopupHistory() {
   }
 }
 
+// --- ระบบล็อกปุ่มเปิด/ปิด/รีสตาร์ท (ป้องกันการกดซ้ำ) ---
+let powerLockIntervals = {};
 
+function startPowerLock(machineId, durationMs = 120000) {
+  const lockUntil = Date.now() + durationMs;
+  localStorage.setItem(`power_lock_until_${machineId}`, lockUntil);
+  runPowerButtonsTimer(machineId);
+}
+
+function runPowerButtonsTimer(machineId) {
+  if (powerLockIntervals[machineId]) {
+    clearInterval(powerLockIntervals[machineId]);
+  }
+
+  function update() {
+    const lockUntil = parseInt(localStorage.getItem(`power_lock_until_${machineId}`) || '0', 10);
+    const now = Date.now();
+    const remaining = Math.max(0, Math.ceil((lockUntil - now) / 1000));
+
+    const btnOn = document.getElementById(`btn-power-on-${machineId}`);
+    const btnOff = document.getElementById(`btn-power-off-${machineId}`);
+    const btnRestart = document.getElementById(`btn-power-restart-${machineId}`);
+    
+    if (remaining > 0) {
+      // Disable buttons
+      [btnOn, btnOff, btnRestart].forEach(btn => {
+        if (btn) {
+          btn.disabled = true;
+          btn.classList.add('opacity-50', 'cursor-not-allowed');
+          // Remove hover styles
+          btn.classList.remove(
+            'hover:bg-green-500/20', 'hover:border-green-500',
+            'hover:bg-red-500/20', 'hover:border-red-500',
+            'hover:bg-orange-500/20', 'hover:border-orange-500'
+          );
+        }
+      });
+
+      // Update timer message in the header
+      const headerEl = document.querySelector(`#power-control-${machineId} p`);
+      if (headerEl) {
+        let span = document.getElementById(`power-lock-label-${machineId}`);
+        if (!span) {
+          span = document.createElement('span');
+          span.className = 'lock-timer-text text-red-400 font-bold ml-2 text-xs';
+          span.id = `power-lock-label-${machineId}`;
+          headerEl.appendChild(span);
+        }
+        span.textContent = `(ล็อกชั่วคราวอีก ${remaining} วิ)`;
+      }
+    } else {
+      // Lock expired
+      clearInterval(powerLockIntervals[machineId]);
+      delete powerLockIntervals[machineId];
+      localStorage.removeItem(`power_lock_until_${machineId}`);
+
+      // Enable and restore buttons
+      if (btnOn) {
+        btnOn.disabled = false;
+        btnOn.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnOn.classList.add('hover:bg-green-500/20', 'hover:border-green-500');
+      }
+      if (btnOff) {
+        btnOff.disabled = false;
+        btnOff.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnOff.classList.add('hover:bg-red-500/20', 'hover:border-red-500');
+      }
+      if (btnRestart) {
+        btnRestart.disabled = false;
+        btnRestart.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnRestart.classList.add('hover:bg-orange-500/20', 'hover:border-orange-500');
+      }
+
+      // Remove label
+      const label = document.getElementById(`power-lock-label-${machineId}`);
+      if (label) {
+        label.remove();
+      }
+    }
+  }
+
+  update();
+  powerLockIntervals[machineId] = setInterval(update, 1000);
+}
+
+// =============================================
+// RENTAL EXTENSION FUNCTIONS (ต่อเวลาเช่า)
+// =============================================
+function openExtendModal(machineId) {
+  if (!requireLogin()) return;
+
+  const machine = activeMachines.find(m => m.id === machineId);
+  if (!machine) return;
+
+  selectedExtendMachineId = machineId;
+
+  // Update Modal content
+  document.getElementById('extendMachineName').textContent = `➕ ต่อเวลาเช่าเครื่อง ${machine.name}`;
+  document.getElementById('extendMachineSpec').textContent = `${machine.cpu || ''} • ${machine.ram || ''} • ${machine.gpu || ''}`;
+
+  // Reset inputs
+  currentExtendUnit = 'day';
+  currentExtendQuantity = 1;
+  document.getElementById('extendQuantity').value = 1;
+  document.getElementById('extendQuantityUnitLabel').textContent = 'วัน';
+  updateExtendUnitButtonsHighlight();
+
+  // User credit
+  const user = getCachedUser();
+  document.getElementById('extendUserCredit').textContent = user ? `฿ ${formatCurrency(user.credit)}` : '฿ 0.00';
+
+  // Calculate default price
+  updateExtendCalculation(machine);
+
+  showModal('extendModal');
+}
+
+function selectExtendUnit(unit) {
+  currentExtendUnit = unit;
+  
+  const labelMap = {
+    'day': 'วัน',
+    'week': 'สัปดาห์',
+    'month': 'เดือน'
+  };
+  document.getElementById('extendQuantityUnitLabel').textContent = labelMap[unit] || 'วัน';
+  
+  updateExtendUnitButtonsHighlight();
+  
+  const machine = activeMachines.find(m => m.id === selectedExtendMachineId);
+  updateExtendCalculation(machine);
+}
+
+function updateExtendUnitButtonsHighlight() {
+  const units = ['day', 'week', 'month'];
+  units.forEach(u => {
+    const btn = document.getElementById(`ext-unit-${u}`);
+    if (!btn) return;
+    if (u === currentExtendUnit) {
+      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-yellow-400 bg-white/5 border border-yellow-400/20";
+    } else {
+      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-gray-400 hover:text-white";
+    }
+  });
+}
+
+function adjustExtendQuantity(amount) {
+  const input = document.getElementById('extendQuantity');
+  if (!input) return;
+  let val = parseInt(input.value) || 1;
+  val += amount;
+  if (val < 1) val = 1;
+  input.value = val;
+  currentExtendQuantity = val;
+  
+  const machine = activeMachines.find(m => m.id === selectedExtendMachineId);
+  updateExtendCalculation(machine);
+}
+
+function onExtendQuantityChange() {
+  const input = document.getElementById('extendQuantity');
+  if (!input) return;
+  let val = parseInt(input.value);
+  if (isNaN(val) || val < 1) {
+    val = 1;
+  }
+  currentExtendQuantity = val;
+  
+  const machine = activeMachines.find(m => m.id === selectedExtendMachineId);
+  updateExtendCalculation(machine);
+}
+
+function updateExtendCalculation(machine) {
+  if (!machine) return;
+  
+  let factor = 1;
+  if (currentExtendUnit === 'day') {
+    factor = 24;
+  } else if (currentExtendUnit === 'week') {
+    factor = 7 * 24;
+  } else if (currentExtendUnit === 'month') {
+    factor = 30 * 24;
+  }
+  
+  selectedExtendDuration = currentExtendQuantity * factor;
+  
+  let price = 0;
+  if (currentExtendUnit === 'day') {
+    price = currentExtendQuantity * parseFloat(machine.price_per_day);
+  } else if (currentExtendUnit === 'week') {
+    const weekPrice = parseFloat(machine.price_per_week);
+    price = currentExtendQuantity * (weekPrice > 0 ? weekPrice : parseFloat(machine.price_per_day) * 7);
+  } else if (currentExtendUnit === 'month') {
+    const monthPrice = parseFloat(machine.price_per_month);
+    price = currentExtendQuantity * (monthPrice > 0 ? monthPrice : parseFloat(machine.price_per_day) * 30);
+  }
+  
+  document.getElementById('extendTotalPrice').textContent = `฿ ${formatCurrency(price)}`;
+}
+
+async function confirmExtend() {
+  if (!selectedExtendMachineId || !selectedExtendDuration) {
+    showToast('กรุณาเลือกเวลาต่ออายุ', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('confirmExtendBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px"></div>';
+
+  try {
+    const data = await apiFetch('/api/rent/extend', {
+      method: 'POST',
+      body: { 
+        machine_id: selectedExtendMachineId, 
+        rent_unit: currentExtendUnit,
+        rent_quantity: currentExtendQuantity
+      }
+    });
+
+    hideModal('extendModal');
+    showToast(data.message, 'success');
+
+    // อัปเดตเครดิตใน cache
+    const user = getCachedUser();
+    if (user) {
+      user.credit = data.rental.new_credit;
+      setCachedUser(user);
+      updateNavbar(user);
+    }
+
+    // โหลดข้อมูลแดชบอร์ดใหม่
+    await initDashboard();
+
+  } catch (err) {
+    if (err.status === 400 && err.required) {
+      // เครดิตไม่พอ
+      hideModal('extendModal');
+      document.getElementById('creditRequired').textContent = `฿ ${formatCurrency(err.required)}`;
+      document.getElementById('creditCurrent').textContent = `฿ ${formatCurrency(err.current)}`;
+      showModal('creditModal');
+    } else {
+      showToast(err.error || 'เกิดข้อผิดพลาด', 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ ยืนยันต่อเวลา';
+  }
+}
 

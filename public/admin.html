@@ -71,6 +71,7 @@
       <button class="tab-btn" onclick="switchAdminTab('rentals')" id="tab-rentals">📜 ประวัติเช่า</button>
       <button class="tab-btn" onclick="switchAdminTab('topups')" id="tab-topups">💰 ประวัติเติมเงิน</button>
       <button class="tab-btn" onclick="switchAdminTab('users')" id="tab-users">👤 จัดการผู้ใช้</button>
+      <button class="tab-btn" onclick="switchAdminTab('settings')" id="tab-settings">⚙️ ตั้งค่าระบบ</button>
     </div>
 
     <!-- Tab Content -->
@@ -110,6 +111,22 @@
           <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
         </div>
       </div>
+
+      <!-- SETTINGS TAB -->
+      <div id="panel-settings" class="hidden">
+        <h2 class="text-lg font-bold text-white mb-4">⚙️ ตั้งค่าระบบ / ช่องทางติดต่อ</h2>
+        <form id="settingsForm" class="space-y-6 max-w-xl">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">ลิ้ง Facebook Fanpage</label>
+            <input id="setting_facebook_url" type="url" class="cyber-input" placeholder="เช่น https://facebook.com/yourpage" required>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">ลิ้ง Discord Community</label>
+            <input id="setting_discord_url" type="url" class="cyber-input" placeholder="เช่น https://discord.gg/yourinvite" required>
+          </div>
+          <button type="submit" id="settingsFormSubmitBtn" class="btn-neon !py-3 !px-6">💾 บันทึกการตั้งค่า</button>
+        </form>
+      </div>
     </div>
   </main>
 
@@ -125,13 +142,7 @@
             <label class="block text-sm text-gray-400 mb-1">ชื่อเครื่อง *</label>
             <input id="mf_name" class="cyber-input" placeholder="เช่น CYBER-GAME-01" required>
           </div>
-          <div>
-            <label class="block text-sm text-gray-400 mb-1">ประเภท *</label>
-            <select id="mf_category" class="cyber-input">
-              <option value="gaming">🎮 สายเกมมิ่ง</option>
-              <option value="bot">🤖 สายเปิดบอท</option>
-            </select>
-          </div>
+          <input type="hidden" id="mf_category" value="gaming">
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -156,19 +167,27 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-sm text-gray-400 mb-1">OS</label>
             <input id="mf_os" class="cyber-input" placeholder="Windows 11 Pro">
           </div>
           <div>
-            <label class="block text-sm text-gray-400 mb-1">ราคา/ชม. (฿) *</label>
-            <input id="mf_price_hour" type="number" step="0.01" class="cyber-input" placeholder="25.00" required>
-          </div>
-          <div>
             <label class="block text-sm text-gray-400 mb-1">ราคา/วัน (฿) *</label>
             <input id="mf_price_day" type="number" step="0.01" class="cyber-input" placeholder="400.00" required>
           </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">ราคา/สัปดาห์ (฿)</label>
+            <input id="mf_price_week" type="number" step="0.01" class="cyber-input" placeholder="เช่น 2500.00 (เว้นว่างไว้เพื่อใช้ 7 x ราคาต่อวัน)">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-1">ราคา/เดือน (฿)</label>
+            <input id="mf_price_month" type="number" step="0.01" class="cyber-input" placeholder="เช่น 9000.00 (เว้นว่างไว้เพื่อใช้ 30 x ราคาต่อวัน)">
+          </div>
+          <input id="mf_price_hour" type="hidden" value="0">
         </div>
 
 
@@ -182,7 +201,7 @@
             </div>
             <div>
               <label class="block text-sm text-gray-400 mb-1">AnyDesk Password</label>
-              <input id="mf_anydesk_pass" class="cyber-input" placeholder="รหัสผ่าน AnyDesk">
+              <input id="mf_anydesk_pass" class="cyber-input" placeholder="รหัสผ่าน">
             </div>
           </div>
         </div>

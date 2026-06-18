@@ -30,11 +30,13 @@ async function initAdmin() {
       loadAdminMachines(),
       loadAdminRentals(),
       loadAdminTopups(),
-      loadAdminUsers()
+      loadAdminUsers(),
+      loadAdminSettings()
     ]);
 
     setupMachineForm();
     setupUserCreditForm();
+    setupSettingsForm();
   } catch (err) {
     document.getElementById('accessDenied').classList.remove('hidden');
     document.getElementById('adminContent').classList.add('hidden');
@@ -43,7 +45,7 @@ async function initAdmin() {
 
 // --- Tab Switching ---
 function switchAdminTab(tab) {
-  ['machines', 'rentals', 'topups', 'users'].forEach(t => {
+  ['machines', 'rentals', 'topups', 'users', 'settings'].forEach(t => {
     document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
     document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
   });
@@ -100,7 +102,6 @@ async function loadAdminMachines() {
           <tr>
             <th>ID</th>
             <th>ชื่อเครื่อง</th>
-            <th>ประเภท</th>
             <th>สเปก</th>
             <th>ราคา</th>
             <th>สถานะ</th>
@@ -114,13 +115,12 @@ async function loadAdminMachines() {
             <tr>
               <td class="text-gray-500 font-mono text-xs">#${m.id}</td>
               <td class="font-semibold text-white whitespace-nowrap">${m.name}</td>
-              <td>${m.category === 'gaming' ? '<span class="text-pink-400">🎮 Gaming</span>' : '<span class="text-yellow-400">🤖 Bot</span>'}</td>
               <td class="text-xs text-gray-400">
                 <span class="block">${m.cpu || '-'}</span>
                 <span class="block">${m.ram || '-'} / ${m.gpu || '-'}</span>
               </td>
               <td class="whitespace-nowrap">
-                <span class="text-yellow-400 font-bold">฿${formatCurrency(m.price_per_hour)}</span><span class="text-gray-500 text-xs">/ชม.</span>
+                <span class="text-pink-400 font-bold">฿${formatCurrency(m.price_per_day)}</span><span class="text-gray-500 text-xs">/วัน</span>
               </td>
               <td>${statusBadge(m.status)}</td>
               <td class="text-xs font-mono text-cyan-400">${m.anydesk_id || '-'}</td>
@@ -129,7 +129,6 @@ async function loadAdminMachines() {
                   <div class="flex gap-1">
                     <button onclick="powerMachine(${m.id}, 'on')" class="px-2 py-1 text-xs bg-green-500/10 text-green-400 rounded border border-green-500/20 hover:bg-green-500/20 transition" title="เปิดเครื่อง">⚡เปิด</button>
                     <button onclick="powerMachine(${m.id}, 'off')" class="px-2 py-1 text-xs bg-red-500/10 text-red-400 rounded border border-red-500/20 hover:bg-red-500/20 transition" title="ปิดเครื่อง">❌ปิด</button>
-                    <button onclick="powerMachine(${m.id}, 'restart')" class="px-2 py-1 text-xs bg-orange-500/10 text-orange-400 rounded border border-orange-500/20 hover:bg-orange-500/20 transition" title="รีสตาร์ท">🔄</button>
                   </div>
                 ` : '<span class="text-gray-600 text-xs">ยังไม่ตั้งค่า</span>'}
               </td>
@@ -140,6 +139,8 @@ async function loadAdminMachines() {
                     <button onclick="changeMachineStatus(${m.id}, 'maintenance')" class="px-2 py-1 text-xs bg-orange-500/10 text-orange-400 rounded border border-orange-500/20 hover:bg-orange-500/20 transition" title="ปิดซ่อม">🔧</button>
                   ` : m.status === 'maintenance' ? `
                     <button onclick="changeMachineStatus(${m.id}, 'available')" class="px-2 py-1 text-xs bg-green-500/10 text-green-400 rounded border border-green-500/20 hover:bg-green-500/20 transition" title="เปิดใช้งาน">✅</button>
+                  ` : m.status === 'clearing' ? `
+                    <button onclick="changeMachineStatus(${m.id}, 'available')" class="px-2 py-1 text-xs bg-green-500/10 text-green-400 rounded border border-green-500/20 hover:bg-green-500/20 transition" title="เสร็จสิ้นการเคลียข้อมูล (เปลี่ยนเป็นว่าง)">🔓</button>
                   ` : `
                     <button onclick="changeMachineStatus(${m.id}, 'available')" class="px-2 py-1 text-xs bg-green-500/10 text-green-400 rounded border border-green-500/20 hover:bg-green-500/20 transition" title="คืนเครื่อง">🔓</button>
                   `}
@@ -190,6 +191,8 @@ async function editMachine(id) {
   document.getElementById('mf_os').value = m.os || '';
   document.getElementById('mf_price_hour').value = m.price_per_hour;
   document.getElementById('mf_price_day').value = m.price_per_day;
+  document.getElementById('mf_price_week').value = m.price_per_week || '';
+  document.getElementById('mf_price_month').value = m.price_per_month || '';
   document.getElementById('mf_anydesk_id').value = m.anydesk_id || '';
   document.getElementById('mf_anydesk_pass').value = m.anydesk_password || '';
   document.getElementById('mf_tuya_id').value = m.tuya_device_id || '';
@@ -218,6 +221,8 @@ function setupMachineForm() {
       os: document.getElementById('mf_os').value,
       price_per_hour: document.getElementById('mf_price_hour').value,
       price_per_day: document.getElementById('mf_price_day').value,
+      price_per_week: document.getElementById('mf_price_week').value || 0,
+      price_per_month: document.getElementById('mf_price_month').value || 0,
       anydesk_id: document.getElementById('mf_anydesk_id').value,
       anydesk_password: document.getElementById('mf_anydesk_pass').value,
       tuya_device_id: document.getElementById('mf_tuya_id').value,
@@ -276,7 +281,7 @@ async function deleteMachine(id, name) {
 
 // --- Power Control via Tuya ---
 async function powerMachine(id, action) {
-  const actionLabel = { on: 'เปิดเครื่อง', off: 'ปิดเครื่อง', restart: 'รีสตาร์ทเครื่อง' }[action];
+  const actionLabel = { on: 'เปิดเครื่อง', off: 'ปิดเครื่อง', restart: 'บังคับรีสตาร์ท (Force Reset)' }[action];
   if (!confirm(`⚡ ต้องการ "${actionLabel}" ใช่หรือไม่?`)) return;
 
   try {
@@ -321,7 +326,12 @@ async function loadAdminRentals() {
               <td class="font-mono text-xs text-gray-500">#${r.id}</td>
               <td class="font-semibold text-pink-400">${r.users?.username || '-'}</td>
               <td class="text-white whitespace-nowrap">${r.machine_name || '-'}</td>
-              <td>${r.duration_hours >= 24 ? Math.floor(r.duration_hours / 24) + ' วัน' : r.duration_hours + ' ชม.'}</td>
+              <td>${
+                r.duration_hours % 720 === 0 ? (r.duration_hours / 720) + ' เดือน' :
+                r.duration_hours % 168 === 0 ? (r.duration_hours / 168) + ' สัปดาห์' :
+                r.duration_hours >= 24 ? Math.floor(r.duration_hours / 24) + ' วัน' :
+                r.duration_hours + ' ชม.'
+              }</td>
               <td class="text-yellow-400 font-bold">฿${formatCurrency(r.total_price)}</td>
               <td class="text-xs whitespace-nowrap">${formatDate(r.started_at)}</td>
               <td class="text-xs whitespace-nowrap">${formatDate(r.ended_at)}</td>
@@ -476,6 +486,47 @@ function setupUserCreditForm() {
     } finally {
       btn.disabled = false;
       btn.textContent = '💾 ยืนยัน';
+    }
+  });
+}
+
+// --- Settings Management (Facebook & Discord URL) ---
+async function loadAdminSettings() {
+  try {
+    const data = await apiFetch('/api/settings');
+    const fbInput = document.getElementById('setting_facebook_url');
+    const dcInput = document.getElementById('setting_discord_url');
+    if (fbInput) fbInput.value = data.facebook_url || '';
+    if (dcInput) dcInput.value = data.discord_url || '';
+  } catch (err) {
+    console.error('Error loading settings:', err);
+  }
+}
+
+function setupSettingsForm() {
+  const form = document.getElementById('settingsForm');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('settingsFormSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px"></div>';
+
+    const facebook_url = document.getElementById('setting_facebook_url').value;
+    const discord_url = document.getElementById('setting_discord_url').value;
+
+    try {
+      await apiFetch('/api/admin/settings', {
+        method: 'PUT',
+        body: { facebook_url, discord_url }
+      });
+      showToast('บันทึกการตั้งค่าสำเร็จ', 'success');
+    } catch (err) {
+      showToast(err.error || 'เกิดข้อผิดพลาดในการบันทึกการตั้งค่า', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '💾 บันทึกการตั้งค่า';
     }
   });
 }

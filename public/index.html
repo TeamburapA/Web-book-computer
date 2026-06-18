@@ -40,6 +40,7 @@
           <a href="/topup.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">เติมเงิน</a>
           <a href="/dashboard.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">แดชบอร์ด</a>
           <a href="/rules.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">กฎการใช้งาน</a>
+          <button onclick="showModal('contactModal')" class="text-gray-400 text-sm hover:text-yellow-400 transition">ติดต่อเรา</button>
         </div>
 
         <!-- Desktop Auth / User Info -->
@@ -65,6 +66,7 @@
         <a href="/topup.html" class="block px-3 py-2 rounded-lg text-gray-400 hover:text-white text-sm">💰 เติมเงิน</a>
         <a href="/dashboard.html" class="block px-3 py-2 rounded-lg text-gray-400 hover:text-white text-sm">📊 แดชบอร์ด</a>
         <a href="/rules.html" class="block px-3 py-2 rounded-lg text-gray-400 hover:text-white text-sm">📜 กฎการใช้งาน</a>
+        <button onclick="showModal('contactModal')" class="w-full text-left block px-3 py-2 rounded-lg text-gray-400 hover:text-white text-sm">💬 ติดต่อเรา</button>
         <div class="border-t border-white/5 pt-3 mt-3">
           <div id="mobileAuthButtons">
             <button onclick="showModal('authModal')" class="w-full btn-neon text-sm !py-2">เข้าสู่ระบบ / สมัครสมาชิก</button>
@@ -102,11 +104,6 @@
       <div>
         <h2 class="text-2xl font-bold text-white">เครื่องคอมพิวเตอร์ให้เช่า</h2>
         <p class="text-gray-500 text-sm mt-1">เลือกเครื่องที่ต้องการแล้วเริ่มใช้งานได้ทันที</p>
-      </div>
-      <div class="flex gap-2 flex-wrap" id="filterBar">
-        <button class="filter-btn active" onclick="filterMachines('all')">📋 ทั้งหมด</button>
-        <button class="filter-btn" onclick="filterMachines('gaming')">🎮 สายเกมมิ่ง</button>
-        <button class="filter-btn" onclick="filterMachines('bot')">🤖 สายเปิดบอท</button>
       </div>
     </div>
   </section>
@@ -173,7 +170,25 @@
 
       <!-- Duration Options -->
       <p class="text-sm text-gray-400 mb-3">เลือกระยะเวลาเช่า:</p>
-      <div class="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-6" id="durationOptions"></div>
+      <div class="flex flex-col gap-4 mb-6">
+        <!-- Duration Type Segmented Control -->
+        <div class="grid grid-cols-3 gap-2 bg-cyber-dark p-1 rounded-lg border border-cyber-border">
+          <button type="button" id="unit-day" onclick="selectRentUnit('day')" class="py-2.5 text-sm font-semibold rounded-md transition duration-200 text-yellow-400 bg-white/5 border border-yellow-400/20">รายวัน</button>
+          <button type="button" id="unit-week" onclick="selectRentUnit('week')" class="py-2.5 text-sm font-semibold rounded-md transition duration-200 text-gray-400 hover:text-white">รายสัปดาห์</button>
+          <button type="button" id="unit-month" onclick="selectRentUnit('month')" class="py-2.5 text-sm font-semibold rounded-md transition duration-200 text-gray-400 hover:text-white">รายเดือน</button>
+        </div>
+        
+        <!-- Quantity input with plus/minus buttons -->
+        <div class="flex items-center gap-3">
+          <span class="text-sm text-gray-400 font-medium">จำนวน:</span>
+          <div class="flex items-center bg-cyber-dark border border-cyber-border rounded-lg overflow-hidden">
+            <button type="button" onclick="adjustQuantity(-1)" class="px-4 py-2 text-gray-400 hover:text-white hover:bg-white/5 transition font-bold text-lg">-</button>
+            <input type="number" id="rentQuantity" value="1" min="1" oninput="onQuantityChange()" class="w-16 bg-transparent text-center text-white font-bold border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+            <button type="button" onclick="adjustQuantity(1)" class="px-4 py-2 text-gray-400 hover:text-white hover:bg-white/5 transition font-bold text-lg">+</button>
+          </div>
+          <span id="quantityUnitLabel" class="text-sm text-gray-400 font-medium">วัน</span>
+        </div>
+      </div>
 
       <!-- Price Summary -->
       <div class="bg-white/5 rounded-lg p-4 mb-4 border border-white/5">
@@ -216,6 +231,121 @@
       </div>
     </div>
   </div>
+
+  <!-- ========== EXTEND MODAL ========== -->
+  <div id="extendModal" class="modal-overlay">
+    <div class="modal-content !max-w-lg">
+      <h3 class="text-xl font-bold text-white mb-1" id="extendMachineName">ต่อเวลาเช่าเครื่อง</h3>
+      <p class="text-gray-500 text-sm mb-6" id="extendMachineSpec"></p>
+
+      <!-- Duration Options -->
+      <p class="text-sm text-gray-400 mb-3">เลือกระยะเวลาต่อเวลา:</p>
+      <div class="flex flex-col gap-4 mb-6">
+        <!-- Duration Type Segmented Control -->
+        <div class="grid grid-cols-3 gap-2 bg-cyber-dark p-1 rounded-lg border border-cyber-border">
+          <button type="button" id="ext-unit-day" onclick="selectExtendUnit('day')" class="py-2.5 text-sm font-semibold rounded-md transition duration-200 text-yellow-400 bg-white/5 border border-yellow-400/20">รายวัน</button>
+          <button type="button" id="ext-unit-week" onclick="selectExtendUnit('week')" class="py-2.5 text-sm font-semibold rounded-md transition duration-200 text-gray-400 hover:text-white">รายสัปดาห์</button>
+          <button type="button" id="ext-unit-month" onclick="selectExtendUnit('month')" class="py-2.5 text-sm font-semibold rounded-md transition duration-200 text-gray-400 hover:text-white">รายเดือน</button>
+        </div>
+        
+        <!-- Quantity input with plus/minus buttons -->
+        <div class="flex items-center gap-3">
+          <span class="text-sm text-gray-400 font-medium">จำนวน:</span>
+          <div class="flex items-center bg-cyber-dark border border-cyber-border rounded-lg overflow-hidden">
+            <button type="button" onclick="adjustExtendQuantity(-1)" class="px-4 py-2 text-gray-400 hover:text-white hover:bg-white/5 transition font-bold text-lg">-</button>
+            <input type="number" id="extendQuantity" value="1" min="1" oninput="onExtendQuantityChange()" class="w-16 bg-transparent text-center text-white font-bold border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+            <button type="button" onclick="adjustExtendQuantity(1)" class="px-4 py-2 text-gray-400 hover:text-white hover:bg-white/5 transition font-bold text-lg">+</button>
+          </div>
+          <span id="extendQuantityUnitLabel" class="text-sm text-gray-400 font-medium">วัน</span>
+        </div>
+      </div>
+
+      <!-- Price Summary -->
+      <div class="bg-white/5 rounded-lg p-4 mb-4 border border-white/5">
+        <div class="flex justify-between items-center">
+          <span class="text-gray-400">ค่าต่อเวลารวม</span>
+          <span class="text-2xl font-bold neon-text-yellow" id="extendTotalPrice">฿ 0.00</span>
+        </div>
+        <div class="flex justify-between items-center mt-2">
+          <span class="text-gray-500 text-xs">เครดิตคงเหลือ</span>
+          <span class="text-gray-400 text-sm" id="extendUserCredit">฿ 0.00</span>
+        </div>
+      </div>
+
+      <!-- Buttons -->
+      <div class="flex gap-3">
+        <button onclick="hideModal('extendModal')" class="btn-outline flex-1">ยกเลิก</button>
+        <button onclick="confirmExtend()" id="confirmExtendBtn" class="btn-neon flex-1 font-bold">⚡ ยืนยันต่อเวลา</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== CONTACT MODAL ========== -->
+  <div id="contactModal" class="modal-overlay">
+    <div class="modal-content !max-w-md">
+      <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+        <span>💬</span> ช่องทางติดต่อแอดมิน
+      </h3>
+      <p class="text-gray-400 text-sm mb-6">หากพบปัญหาการใช้งาน หรือต้องการสอบถามข้อมูลเพิ่มเติม สามารถติดต่อเราได้ตลอด 24 ชั่วโมง</p>
+
+      <div class="space-y-4">
+        <!-- Facebook Fanpage -->
+        <a id="contact_facebook_link" href="https://facebook.com" target="_blank" class="flex items-center justify-between p-4 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl transition group">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl text-blue-400">🔵</span>
+            <div>
+              <p class="text-white font-bold text-sm">Facebook Fanpage</p>
+              <p class="text-gray-400 text-xs mt-0.5">ChickDDC บริการเช่าคอมออนไลน์</p>
+            </div>
+          </div>
+          <span class="text-blue-400 group-hover:translate-x-1 transition">👍 ส่งข้อความ &rarr;</span>
+        </a>
+
+        <!-- Discord Support -->
+        <a id="contact_discord_link" href="https://discord.com" target="_blank" class="flex items-center justify-between p-4 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded-xl transition group">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl text-purple-400">🟣</span>
+            <div>
+              <p class="text-white font-bold text-sm">Discord Community</p>
+              <p class="text-gray-400 text-xs mt-0.5">พูดคุย สอบถามปัญหากับแอดมินโดยตรง</p>
+            </div>
+          </div>
+          <span class="text-purple-400 group-hover:translate-x-1 transition">🎮 เข้าร่วม &rarr;</span>
+        </a>
+      </div>
+
+      <!-- Close Button -->
+      <div class="mt-6">
+        <button onclick="hideModal('contactModal')" class="btn-outline w-full py-2.5">ปิดหน้าต่าง</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== RENT SUCCESS MODAL ========== -->
+  <div id="rentSuccessModal" class="modal-overlay">
+    <div class="modal-content !max-w-md text-center">
+      <div class="w-16 h-16 bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 rounded-full flex items-center justify-center text-3xl mx-auto mb-4 animate-bounce">
+        ⚡
+      </div>
+      <h3 class="text-2xl font-bold text-white mb-2">เช่าเครื่องสำเร็จ!</h3>
+      <p class="text-yellow-400 font-semibold text-sm mb-4">โปรดรอ 2-5 นาทีค่อยเข้าเครื่อง</p>
+      
+      <div class="bg-white/5 border border-white/5 rounded-xl p-4 mb-6 text-left space-y-2">
+        <p class="text-gray-300 text-sm leading-relaxed">
+          เนื่องจากระบบกำลังสั่งเปิดเครื่องคอมพิวเตอร์และเตรียมข้อมูลสำหรับคุณโดยอัตโนมัติ
+        </p>
+        <p class="text-gray-400 text-xs border-t border-white/5 pt-2 mt-2">
+          💡 หากเกิน 5 นาทีแล้วยังเข้าไม่ได้ กรุณาติดต่อแอดมินผ่านช่องทาง <strong>"ติดต่อเรา"</strong> ด้านบนของเว็บไซต์
+        </p>
+      </div>
+
+      <div class="flex gap-3">
+        <button onclick="hideModal('rentSuccessModal')" class="btn-outline flex-1">ปิด</button>
+        <a href="/dashboard.html" class="btn-neon flex-1 text-center flex items-center justify-center gap-1">📊 ไปแดชบอร์ด</a>
+      </div>
+    </div>
+  </div>
+
 
   <!-- ========== FOOTER ========== -->
   <footer class="border-t border-white/5 bg-cyber-dark/80">

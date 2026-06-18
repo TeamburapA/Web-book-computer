@@ -92,6 +92,7 @@ function statusBadge(status) {
     available: { text: '🟢 ว่าง', class: 'badge-available' },
     in_use: { text: '🟡 กำลังใช้งาน', class: 'badge-in-use' },
     maintenance: { text: '🔴 ปิดซ่อม', class: 'badge-maintenance' },
+    clearing: { text: '🟡 กำลังเคลียข้อมูล', class: 'badge-clearing' },
     pending: { text: '⏳ รอตรวจสอบ', class: 'badge-pending' },
     approved: { text: '✅ อนุมัติ', class: 'badge-approved' },
     rejected: { text: '❌ ปฏิเสธ', class: 'badge-rejected' },
@@ -143,3 +144,20 @@ function requireLogin(action) {
   }
   return true;
 }
+
+// --- Load and Bind Contact Links ---
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const data = await apiFetch('/api/settings');
+    const fbLink = document.getElementById('contact_facebook_link');
+    const dcLink = document.getElementById('contact_discord_link');
+    if (fbLink && data.facebook_url) {
+      fbLink.href = data.facebook_url;
+    }
+    if (dcLink && data.discord_url) {
+      dcLink.href = data.discord_url;
+    }
+  } catch (err) {
+    console.error('Failed to load contact settings:', err);
+  }
+});

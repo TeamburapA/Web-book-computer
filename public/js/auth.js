@@ -103,6 +103,7 @@ function setupAuthForms() {
         setToken(data.token);
         setCachedUser(data.user);
         updateNavbar(data.user);
+        await checkSession();
         hideModal('authModal');
         showToast(`ยินดีต้อนรับ, ${data.user.username}! 🎮`, 'success');
         loginForm.reset();
@@ -148,6 +149,7 @@ function setupAuthForms() {
         setToken(data.token);
         setCachedUser(data.user);
         updateNavbar(data.user);
+        await checkSession();
         hideModal('authModal');
         showToast(`สมัครสมาชิกสำเร็จ! ยินดีต้อนรับ ${data.user.username} 🎉`, 'success');
         registerForm.reset();
@@ -166,8 +168,8 @@ function logout() {
   updateNavbar(null);
   showToast('ออกจากระบบสำเร็จ', 'info');
 
-  // ถ้าอยู่หน้า dashboard หรือ admin ให้กลับหน้าแรก
-  if (window.location.pathname.includes('dashboard') || window.location.pathname.includes('admin')) {
+  // ถ้าอยู่หน้า dashboard, topup หรือ admin ให้กลับหน้าแรก
+  if (window.location.pathname.includes('dashboard') || window.location.pathname.includes('topup') || window.location.pathname.includes('admin')) {
     window.location.href = '/';
   }
 

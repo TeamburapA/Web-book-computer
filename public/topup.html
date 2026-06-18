@@ -30,6 +30,7 @@
           <a href="/topup.html" class="text-yellow-400 font-medium text-sm">เติมเงิน</a>
           <a href="/dashboard.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">แดชบอร์ด</a>
           <a href="/rules.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">กฎการใช้งาน</a>
+          <button onclick="showModal('contactModal')" class="text-gray-400 text-sm hover:text-yellow-400 transition">ติดต่อเรา</button>
         </div>
         <div class="hidden md:flex items-center gap-3">
           <div id="authButtons" class="flex gap-2">
@@ -50,6 +51,7 @@
       <a href="/" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">🏠 หน้าหลัก</a>
       <a href="/topup.html" class="block px-3 py-2 rounded-lg text-yellow-400 bg-yellow-400/5 text-sm">💰 เติมเงิน</a>
       <a href="/dashboard.html" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">📊 แดชบอร์ด</a>
+      <button onclick="showModal('contactModal')" class="w-full text-left block px-3 py-2 rounded-lg text-gray-400 hover:text-white text-sm">💬 ติดต่อเรา</button>
       <div class="border-t border-white/5 pt-3">
         <div id="mobileAuthButtons"><button onclick="showModal('authModal')"
             class="w-full btn-neon text-sm !py-2">เข้าสู่ระบบ</button></div>
@@ -60,81 +62,92 @@
 
   <!-- CONTENT -->
   <main class="flex-1 max-w-4xl mx-auto px-4 sm:px-6 py-10 w-full">
-    <h1 class="text-3xl font-bold text-white mb-2">💰 เติมเงินเข้าระบบ</h1>
-    <p class="text-gray-500 text-sm mb-8">อัปโหลดสลิปโอนเงิน — ระบบจะตรวจสอบและเติมเครดิตให้อัตโนมัติ</p>
-
-    <div class="grid md:grid-cols-2 gap-8">
-      <!-- QR Code / ข้อมูลโอนเงิน -->
-      <div class="cyber-card p-6">
-        <h2 class="text-lg font-bold text-white mb-4">📱 ข้อมูลการโอนเงิน</h2>
-
-        <!-- QR Code Placeholder -->
-       <div class="bg-white rounded-2xl p-6 mx-auto w-80 h-80 flex items-center justify-center mb-8 shadow-inner">
-    <img
-      src="promppay_Nat.jpg"
-      alt="QR PromptPay"
-      class="w-full h-full object-contain"
-    />
-  </div>
-
-        <div class="space-y-3 text-sm">
-          <div class="flex justify-between p-3 bg-white/5 rounded-lg">
-            <span class="text-gray-400">ธนาคาร</span>
-            <span class="text-white font-semibold">กสิกรไทย (KBANK)</span>
-          </div>
-          <div class="flex justify-between p-3 bg-white/5 rounded-lg">
-            <span class="text-gray-400">เลขบัญชี</span>
-            <span class="text-yellow-400 font-mono font-bold">075-8-27415-2</span>
-          </div>
-          <div class="flex justify-between p-3 bg-white/5 rounded-lg">
-            <span class="text-gray-400">ชื่อบัญชี</span>
-            <span class="text-white">นายณัฐกรณ์ อินธิสาร</span>
-          </div>
-        </div>
-
-        <div class="mt-4 p-3 bg-yellow-400/5 border border-yellow-400/20 rounded-lg">
-          <p class="text-xs text-yellow-400">⚠️ หมายเหตุ: กรุณาโอนเงินตามจำนวนที่ต้องการเติม
-            แล้วอัปโหลดสลิปในช่องด้านข้าง ระบบจะตรวจสอบอัตโนมัติ</p>
-        </div>
-      </div>
-
-      <!-- Upload Slip -->
-      <div class="cyber-card p-6">
-        <h2 class="text-lg font-bold text-white mb-4">🧾 อัปโหลดสลิปโอนเงิน</h2>
-
-        <div id="uploadZone" class="upload-zone mb-4" onclick="document.getElementById('slipFile').click()">
-          <input type="file" id="slipFile" accept="image/*" class="hidden" onchange="previewSlip(event)">
-          <div id="uploadContent">
-            <div class="text-4xl mb-3">📎</div>
-            <p class="text-gray-400 text-sm">คลิกหรือลากไฟล์มาวางที่นี่</p>
-            <p class="text-gray-600 text-xs mt-1">รองรับ JPG, PNG (ไม่เกิน 5MB)</p>
-          </div>
-          <div id="previewContent" class="hidden">
-            <img id="slipPreview" class="max-h-48 mx-auto rounded-lg">
-            <p class="text-sm text-gray-400 mt-2" id="slipFileName"></p>
-          </div>
-        </div>
-
-        <button onclick="submitSlip()" id="submitSlipBtn" class="btn-neon w-full !py-3 mb-4">
-          🔍 ส่งสลิปตรวจสอบ
-        </button>
-
-        <!-- Result -->
-        <div id="slipResult" class="hidden"></div>
-
-        <!-- Current Credit -->
-        <div class="mt-4 p-3 bg-white/5 rounded-lg flex justify-between items-center">
-          <span class="text-gray-400 text-sm">เครดิตปัจจุบัน</span>
-          <span class="neon-text-yellow font-bold text-lg" id="currentCredit">฿ 0.00</span>
-        </div>
-      </div>
+    <!-- Login Required Message -->
+    <div id="loginRequired" class="hidden text-center py-20">
+      <div class="text-6xl mb-4">🔒</div>
+      <h2 class="text-2xl font-bold text-white mb-2">กรุณาเข้าสู่ระบบ</h2>
+      <p class="text-gray-500 mb-6">คุณต้องเข้าสู่ระบบเพื่อเติมเงิน</p>
+      <button onclick="showModal('authModal')" class="btn-neon">เข้าสู่ระบบ</button>
     </div>
 
-    <!-- Topup History -->
-    <div class="cyber-card mt-8 p-6">
-      <h2 class="text-lg font-bold text-white mb-4">📜 ประวัติเติมเงิน</h2>
-      <div class="overflow-x-auto" id="topupHistory">
-        <div class="text-center py-10 text-gray-500">กรุณาเข้าสู่ระบบเพื่อดูประวัติ</div>
+    <!-- Topup Content -->
+    <div id="topupContent" class="hidden">
+      <h1 class="text-3xl font-bold text-white mb-2">💰 เติมเงินเข้าระบบ</h1>
+      <p class="text-gray-500 text-sm mb-8">อัปโหลดสลิปโอนเงิน — ระบบจะตรวจสอบและเติมเครดิตให้อัตโนมัติ</p>
+
+      <div class="grid md:grid-cols-2 gap-8">
+        <!-- QR Code / ข้อมูลโอนเงิน -->
+        <div class="cyber-card p-6">
+          <h2 class="text-lg font-bold text-white mb-4">📱 ข้อมูลการโอนเงิน</h2>
+
+          <!-- QR Code Placeholder -->
+          <div class="bg-white rounded-2xl p-6 mx-auto w-80 h-80 flex items-center justify-center mb-8 shadow-inner">
+            <img
+              src="promppay_Nat.jpg"
+              alt="QR PromptPay"
+              class="w-full h-full object-contain"
+            />
+          </div>
+
+          <div class="space-y-3 text-sm">
+            <div class="flex justify-between p-3 bg-white/5 rounded-lg">
+              <span class="text-gray-400">ธนาคาร</span>
+              <span class="text-white font-semibold">กสิกรไทย (KBANK)</span>
+            </div>
+            <div class="flex justify-between p-3 bg-white/5 rounded-lg">
+              <span class="text-gray-400">เลขบัญชี</span>
+              <span class="text-yellow-400 font-mono font-bold">075-8-27415-2</span>
+            </div>
+            <div class="flex justify-between p-3 bg-white/5 rounded-lg">
+              <span class="text-gray-400">ชื่อบัญชี</span>
+              <span class="text-white">นายณัฐกรณ์ อินธิสาร</span>
+            </div>
+          </div>
+
+          <div class="mt-4 p-3 bg-yellow-400/5 border border-yellow-400/20 rounded-lg">
+            <p class="text-xs text-yellow-400">⚠️ หมายเหตุ: กรุณาโอนเงินตามจำนวนที่ต้องการเติม
+              แล้วอัปโหลดสลิปในช่องด้านข้าง ระบบจะตรวจสอบอัตโนมัติ</p>
+          </div>
+        </div>
+
+        <!-- Upload Slip -->
+        <div class="cyber-card p-6">
+          <h2 class="text-lg font-bold text-white mb-4">🧾 อัปโหลดสลิปโอนเงิน</h2>
+
+          <div id="uploadZone" class="upload-zone mb-4" onclick="document.getElementById('slipFile').click()">
+            <input type="file" id="slipFile" accept="image/*" class="hidden" onchange="previewSlip(event)">
+            <div id="uploadContent">
+              <div class="text-4xl mb-3">📎</div>
+              <p class="text-gray-400 text-sm">คลิกหรือลากไฟล์มาวางที่นี่</p>
+              <p class="text-gray-600 text-xs mt-1">รองรับ JPG, PNG (ไม่เกิน 5MB)</p>
+            </div>
+            <div id="previewContent" class="hidden">
+              <img id="slipPreview" class="max-h-48 mx-auto rounded-lg">
+              <p class="text-sm text-gray-400 mt-2" id="slipFileName"></p>
+            </div>
+          </div>
+
+          <button onclick="submitSlip()" id="submitSlipBtn" class="btn-neon w-full !py-3 mb-4">
+            🔍 ส่งสลิปตรวจสอบ
+          </button>
+
+          <!-- Result -->
+          <div id="slipResult" class="hidden"></div>
+
+          <!-- Current Credit -->
+          <div class="mt-4 p-3 bg-white/5 rounded-lg flex justify-between items-center">
+            <span class="text-gray-400 text-sm">เครดิตปัจจุบัน</span>
+            <span class="neon-text-yellow font-bold text-lg" id="currentCredit">฿ 0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Topup History -->
+      <div class="cyber-card mt-8 p-6">
+        <h2 class="text-lg font-bold text-white mb-4">📜 ประวัติเติมเงิน</h2>
+        <div class="overflow-x-auto" id="topupHistory">
+          <div class="text-center py-10 text-gray-500">กำลังโหลด...</div>
+        </div>
       </div>
     </div>
   </main>
@@ -167,6 +180,47 @@
               type="password" class="cyber-input" minlength="6" required></div>
           <button type="submit" class="btn-neon w-full !py-3">สมัครสมาชิก</button>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== CONTACT MODAL ========== -->
+  <div id="contactModal" class="modal-overlay">
+    <div class="modal-content !max-w-md">
+      <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+        <span>💬</span> ช่องทางติดต่อแอดมิน
+      </h3>
+      <p class="text-gray-400 text-sm mb-6">หากพบปัญหาการใช้งาน หรือต้องการสอบถามข้อมูลเพิ่มเติม สามารถติดต่อเราได้ตลอด 24 ชั่วโมง</p>
+
+      <div class="space-y-4">
+        <!-- Facebook Fanpage -->
+        <a id="contact_facebook_link" href="https://facebook.com" target="_blank" class="flex items-center justify-between p-4 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl transition group">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl text-blue-400">🔵</span>
+            <div>
+              <p class="text-white font-bold text-sm">Facebook Fanpage</p>
+              <p class="text-gray-400 text-xs mt-0.5">ChickDDC บริการเช่าคอมออนไลน์</p>
+            </div>
+          </div>
+          <span class="text-blue-400 group-hover:translate-x-1 transition">👍 ส่งข้อความ &rarr;</span>
+        </a>
+
+        <!-- Discord Support -->
+        <a id="contact_discord_link" href="https://discord.com" target="_blank" class="flex items-center justify-between p-4 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded-xl transition group">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl text-purple-400">🟣</span>
+            <div>
+              <p class="text-white font-bold text-sm">Discord Community</p>
+              <p class="text-gray-400 text-xs mt-0.5">พูดคุย สอบถามปัญหากับแอดมินโดยตรง</p>
+            </div>
+          </div>
+          <span class="text-purple-400 group-hover:translate-x-1 transition">🎮 เข้าร่วม &rarr;</span>
+        </a>
+      </div>
+
+      <!-- Close Button -->
+      <div class="mt-6">
+        <button onclick="hideModal('contactModal')" class="btn-outline w-full py-2.5">ปิดหน้าต่าง</button>
       </div>
     </div>
   </div>

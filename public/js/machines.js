@@ -6,6 +6,13 @@ let allMachines = [];
 let selectedMachineId = null;
 let selectedDuration = null;
 let countdownIntervals = {};
+let currentRentUnit = 'day';
+let currentRentQuantity = 1;
+let selectedExtendMachineId = null;
+let currentExtendUnit = 'day';
+let currentExtendQuantity = 1;
+let selectedExtendDuration = null;
+
 
 document.addEventListener('DOMContentLoaded', () => {
   loadMachines();
@@ -40,7 +47,7 @@ function filterMachines(category) {
 function renderMachines(machines) {
   const grid = document.getElementById('machineGrid');
   if (!machines || machines.length === 0) {
-    grid.innerHTML = `<div class="col-span-full text-center py-20 text-gray-500">📭 ไม่พบเครื่องในหมวดหมู่นี้</div>`;
+    grid.innerHTML = `<div class="col-span-full text-center py-20 text-gray-500">📭 ไม่พบเครื่องคอมพิวเตอร์ในขณะนี้</div>`;
     return;
   }
 
@@ -52,18 +59,14 @@ function renderMachines(machines) {
 
   grid.innerHTML = machines.map((m, idx) => {
     const isMyMachine = currentUser && m.current_user_id === currentUser.id;
-    const gradientClass = m.category === 'gaming'
-      ? 'from-pink-500/20 to-purple-500/20'
-      : 'from-yellow-500/20 to-orange-500/20';
-    const categoryIcon = m.category === 'gaming' ? '🎮' : '🤖';
+    const gradientClass = 'from-yellow-500/20 to-purple-500/20';
 
     return `
       <div class="cyber-card animate-slide-up" style="animation-delay: ${idx * 0.05}s" id="machine-card-${m.id}">
         <!-- Header gradient -->
         <div class="h-32 bg-gradient-to-br ${gradientClass} relative flex items-center justify-center">
-          <span class="text-5xl opacity-50">${categoryIcon}</span>
+          <span class="text-5xl opacity-50">🖥️</span>
           <div class="absolute top-3 right-3">${statusBadge(m.status)}</div>
-          <div class="absolute top-3 left-3">${categoryLabel(m.category)}</div>
         </div>
 
         <!-- Content -->
@@ -82,11 +85,7 @@ function renderMachines(machines) {
           <!-- Price -->
           <div class="flex items-center justify-between py-3 border-t border-white/5">
             <div>
-              <span class="text-yellow-400 font-bold text-lg">฿${formatCurrency(m.price_per_hour)}</span>
-              <span class="text-gray-500 text-xs">/ชม.</span>
-            </div>
-            <div class="text-right">
-              <span class="text-pink-400 font-bold">฿${formatCurrency(m.price_per_day)}</span>
+              <span class="text-pink-400 font-bold text-lg">฿${formatCurrency(m.price_per_day)}</span>
               <span class="text-gray-500 text-xs">/วัน</span>
             </div>
           </div>
@@ -102,7 +101,10 @@ function renderMachines(machines) {
                 <button onclick="loadAnydeskInfo(${m.id})" class="text-xs text-cyan-400 hover:underline">🖥️ แสดงข้อมูล AnyDesk</button>
               </div>
             </div>
-            <button onclick="releaseMachine(${m.id})" class="mt-3 w-full btn-outline text-sm !py-2 border-red-500/30 text-red-400 hover:!border-red-500 hover:!text-red-400">🔓 คืนเครื่อง</button>
+            <div class="grid grid-cols-2 gap-2 mt-3">
+              <button onclick="openExtendModal(${m.id})" class="btn-neon text-sm !py-2">➕ ต่อเวลา</button>
+              <button onclick="releaseMachine(${m.id})" class="btn-outline text-sm !py-2 border-red-500/30 text-red-400 hover:!border-red-500 hover:!text-red-400">🔓 คืนเครื่อง</button>
+            </div>
           ` : m.status === 'in_use' ? `
             <!-- In use by someone else -->
             <div class="mt-3 p-3 rounded-lg bg-yellow-400/5 border border-yellow-400/20 text-center">
@@ -112,6 +114,9 @@ function renderMachines(machines) {
           ` : m.status === 'available' ? `
             <!-- Available — Rent button -->
             <button onclick="openRentalModal(${m.id})" class="mt-3 w-full btn-neon text-sm !py-2.5">⚡ เช่าเครื่องนี้</button>
+          ` : m.status === 'clearing' ? `
+            <!-- Clearing data -->
+            <div class="mt-3 text-center py-2 text-yellow-400/80 text-sm font-semibold animate-pulse">⏳ กำลังเคลียข้อมูล...</div>
           ` : `
             <!-- Maintenance -->
             <div class="mt-3 text-center py-2 text-gray-500 text-sm">🔧 ปิดให้บริการชั่วคราว</div>
@@ -167,41 +172,27 @@ function openRentalModal(machineId) {
   if (!machine) return;
 
   selectedMachineId = machineId;
-  selectedDuration = null;
 
   // อัปเดต Modal content
   document.getElementById('rentalMachineName').textContent = `⚡ เช่าเครื่อง ${machine.name}`;
   document.getElementById('rentalMachineSpec').textContent = `${machine.cpu} • ${machine.ram} • ${machine.gpu}`;
 
-  // Duration options
-  const durations = [
-    { hours: 1, label: '1 ชม.' },
-    { hours: 2, label: '2 ชม.' },
-    { hours: 3, label: '3 ชม.' },
-    { hours: 6, label: '6 ชม.' },
-    { hours: 12, label: '12 ชม.' },
-    { hours: 24, label: '1 วัน' },
-    { hours: 48, label: '2 วัน' },
-    { hours: 72, label: '3 วัน' }
-  ];
+  // Reset inputs
+  currentRentUnit = 'day';
+  currentRentQuantity = 1;
+  document.getElementById('rentQuantity').value = 1;
+  document.getElementById('quantityUnitLabel').textContent = 'วัน';
+  updateUnitButtonsHighlight();
 
-  document.getElementById('durationOptions').innerHTML = durations.map(d => {
-    const price = calculatePrice(machine, d.hours);
-    return `
-      <div class="duration-option" onclick="selectDuration(${d.hours}, ${machineId})" data-hours="${d.hours}">
-        <p class="text-white font-semibold text-sm">${d.label}</p>
-        <p class="text-yellow-400 text-xs mt-1">฿${formatCurrency(price)}</p>
-      </div>
-    `;
-  }).join('');
-
-  // Reset
-  document.getElementById('rentalTotalPrice').textContent = '฿ 0.00';
+  // Reset rules checkbox
   document.getElementById('acceptRules').checked = false;
 
   // User credit
   const user = getCachedUser();
   document.getElementById('rentalUserCredit').textContent = user ? `฿ ${formatCurrency(user.credit)}` : '฿ 0.00';
+
+  // Calculate default price
+  updateRentCalculation(machine);
 
   showModal('rentalModal');
 }
@@ -216,15 +207,91 @@ function calculatePrice(machine, hours) {
   return hours * parseFloat(machine.price_per_hour);
 }
 
-// --- เลือกระยะเวลา ---
-function selectDuration(hours, machineId) {
-  selectedDuration = hours;
-  const machine = allMachines.find(m => m.id === machineId);
-  const price = calculatePrice(machine, hours);
+// --- เปลี่ยนหน่วยเวลาเช่า ---
+function selectRentUnit(unit) {
+  currentRentUnit = unit;
+  
+  const labelMap = {
+    'day': 'วัน',
+    'week': 'สัปดาห์',
+    'month': 'เดือน'
+  };
+  document.getElementById('quantityUnitLabel').textContent = labelMap[unit] || 'วัน';
+  
+  updateUnitButtonsHighlight();
+  
+  const machine = allMachines.find(m => m.id === selectedMachineId);
+  updateRentCalculation(machine);
+}
 
-  // อัปเดต UI
-  document.querySelectorAll('.duration-option').forEach(el => el.classList.remove('selected'));
-  document.querySelector(`.duration-option[data-hours="${hours}"]`).classList.add('selected');
+// --- อัปเดตการเลือกปุ่มหน่วยเช่า ---
+function updateUnitButtonsHighlight() {
+  const units = ['day', 'week', 'month'];
+  units.forEach(u => {
+    const btn = document.getElementById(`unit-${u}`);
+    if (!btn) return;
+    if (u === currentRentUnit) {
+      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-yellow-400 bg-white/5 border border-yellow-400/20";
+    } else {
+      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-gray-400 hover:text-white";
+    }
+  });
+}
+
+// --- เพิ่ม/ลดจำนวนเวลาเช่า ---
+function adjustQuantity(amount) {
+  const input = document.getElementById('rentQuantity');
+  if (!input) return;
+  let val = parseInt(input.value) || 1;
+  val += amount;
+  if (val < 1) val = 1;
+  input.value = val;
+  currentRentQuantity = val;
+  
+  const machine = allMachines.find(m => m.id === selectedMachineId);
+  updateRentCalculation(machine);
+}
+
+// --- เมื่อผู้ใช้กรอกจำนวนเอง ---
+function onQuantityChange() {
+  const input = document.getElementById('rentQuantity');
+  if (!input) return;
+  let val = parseInt(input.value);
+  if (isNaN(val) || val < 1) {
+    val = 1;
+  }
+  currentRentQuantity = val;
+  
+  const machine = allMachines.find(m => m.id === selectedMachineId);
+  updateRentCalculation(machine);
+}
+
+// --- อัปเดตราคาและระยะเวลาทั้งหมด ---
+function updateRentCalculation(machine) {
+  if (!machine) return;
+  
+  let factor = 1;
+  if (currentRentUnit === 'day') {
+    factor = 24;
+  } else if (currentRentUnit === 'week') {
+    factor = 7 * 24;
+  } else if (currentRentUnit === 'month') {
+    factor = 30 * 24;
+  }
+  
+  selectedDuration = currentRentQuantity * factor;
+  
+  let price = 0;
+  if (currentRentUnit === 'day') {
+    price = currentRentQuantity * parseFloat(machine.price_per_day);
+  } else if (currentRentUnit === 'week') {
+    const weekPrice = parseFloat(machine.price_per_week);
+    price = currentRentQuantity * (weekPrice > 0 ? weekPrice : parseFloat(machine.price_per_day) * 7);
+  } else if (currentRentUnit === 'month') {
+    const monthPrice = parseFloat(machine.price_per_month);
+    price = currentRentQuantity * (monthPrice > 0 ? monthPrice : parseFloat(machine.price_per_day) * 30);
+  }
+  
   document.getElementById('rentalTotalPrice').textContent = `฿ ${formatCurrency(price)}`;
 }
 
@@ -247,11 +314,17 @@ async function confirmRental() {
   try {
     const data = await apiFetch('/api/rent', {
       method: 'POST',
-      body: { machine_id: selectedMachineId, duration_hours: selectedDuration }
+      body: { 
+        machine_id: selectedMachineId, 
+        duration_hours: selectedDuration,
+        rent_unit: currentRentUnit,
+        rent_quantity: currentRentQuantity
+      }
     });
 
     hideModal('rentalModal');
-    showToast(data.message, 'success');
+    showModal('rentSuccessModal');
+    showToast('เช่าคอมพิวเตอร์เรียบร้อยแล้ว!', 'success');
 
     // อัปเดตเครดิตใน cache
     const user = getCachedUser();
@@ -356,3 +429,171 @@ async function releaseMachine(machineId) {
     showToast(err.error || 'เกิดข้อผิดพลาด', 'error');
   }
 }
+
+// =============================================
+// RENTAL EXTENSION FUNCTIONS (ต่อเวลาเช่า)
+// =============================================
+function openExtendModal(machineId) {
+  if (!requireLogin()) return;
+
+  const machine = allMachines.find(m => m.id === machineId);
+  if (!machine) return;
+
+  selectedExtendMachineId = machineId;
+
+  // Update Modal content
+  document.getElementById('extendMachineName').textContent = `➕ ต่อเวลาเช่าเครื่อง ${machine.name}`;
+  document.getElementById('extendMachineSpec').textContent = `${machine.cpu || ''} • ${machine.ram || ''} • ${machine.gpu || ''}`;
+
+  // Reset inputs
+  currentExtendUnit = 'day';
+  currentExtendQuantity = 1;
+  document.getElementById('extendQuantity').value = 1;
+  document.getElementById('extendQuantityUnitLabel').textContent = 'วัน';
+  updateExtendUnitButtonsHighlight();
+
+  // User credit
+  const user = getCachedUser();
+  document.getElementById('extendUserCredit').textContent = user ? `฿ ${formatCurrency(user.credit)}` : '฿ 0.00';
+
+  // Calculate default price
+  updateExtendCalculation(machine);
+
+  showModal('extendModal');
+}
+
+function selectExtendUnit(unit) {
+  currentExtendUnit = unit;
+  
+  const labelMap = {
+    'day': 'วัน',
+    'week': 'สัปดาห์',
+    'month': 'เดือน'
+  };
+  document.getElementById('extendQuantityUnitLabel').textContent = labelMap[unit] || 'วัน';
+  
+  updateExtendUnitButtonsHighlight();
+  
+  const machine = allMachines.find(m => m.id === selectedExtendMachineId);
+  updateExtendCalculation(machine);
+}
+
+function updateExtendUnitButtonsHighlight() {
+  const units = ['day', 'week', 'month'];
+  units.forEach(u => {
+    const btn = document.getElementById(`ext-unit-${u}`);
+    if (!btn) return;
+    if (u === currentExtendUnit) {
+      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-yellow-400 bg-white/5 border border-yellow-400/20";
+    } else {
+      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-gray-400 hover:text-white";
+    }
+  });
+}
+
+function adjustExtendQuantity(amount) {
+  const input = document.getElementById('extendQuantity');
+  if (!input) return;
+  let val = parseInt(input.value) || 1;
+  val += amount;
+  if (val < 1) val = 1;
+  input.value = val;
+  currentExtendQuantity = val;
+  
+  const machine = allMachines.find(m => m.id === selectedExtendMachineId);
+  updateExtendCalculation(machine);
+}
+
+function onExtendQuantityChange() {
+  const input = document.getElementById('extendQuantity');
+  if (!input) return;
+  let val = parseInt(input.value);
+  if (isNaN(val) || val < 1) {
+    val = 1;
+  }
+  currentExtendQuantity = val;
+  
+  const machine = allMachines.find(m => m.id === selectedExtendMachineId);
+  updateExtendCalculation(machine);
+}
+
+function updateExtendCalculation(machine) {
+  if (!machine) return;
+  
+  let factor = 1;
+  if (currentExtendUnit === 'day') {
+    factor = 24;
+  } else if (currentExtendUnit === 'week') {
+    factor = 7 * 24;
+  } else if (currentExtendUnit === 'month') {
+    factor = 30 * 24;
+  }
+  
+  selectedExtendDuration = currentExtendQuantity * factor;
+  
+  let price = 0;
+  if (currentExtendUnit === 'day') {
+    price = currentExtendQuantity * parseFloat(machine.price_per_day);
+  } else if (currentExtendUnit === 'week') {
+    const weekPrice = parseFloat(machine.price_per_week);
+    price = currentExtendQuantity * (weekPrice > 0 ? weekPrice : parseFloat(machine.price_per_day) * 7);
+  } else if (currentExtendUnit === 'month') {
+    const monthPrice = parseFloat(machine.price_per_month);
+    price = currentExtendQuantity * (monthPrice > 0 ? monthPrice : parseFloat(machine.price_per_day) * 30);
+  }
+  
+  document.getElementById('extendTotalPrice').textContent = `฿ ${formatCurrency(price)}`;
+}
+
+async function confirmExtend() {
+  if (!selectedExtendMachineId || !selectedExtendDuration) {
+    showToast('กรุณาเลือกเวลาต่ออายุ', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('confirmExtendBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px"></div>';
+
+  try {
+    const data = await apiFetch('/api/rent/extend', {
+      method: 'POST',
+      body: { 
+        machine_id: selectedExtendMachineId, 
+        rent_unit: currentExtendUnit,
+        rent_quantity: currentExtendQuantity
+      }
+    });
+
+    hideModal('extendModal');
+    showToast(data.message, 'success');
+
+    // อัปเดตเครดิตใน cache
+    const user = getCachedUser();
+    if (user) {
+      user.credit = data.rental.new_credit;
+      setCachedUser(user);
+      updateNavbar(user);
+    }
+
+    // โหลดเครื่องคอมพิวเตอร์ใหม่เพื่อแสดงผลเวลาต่อเช่าที่อัปเดต
+    await loadMachines();
+    // Refresh user credit
+    await checkSession();
+
+  } catch (err) {
+    if (err.status === 400 && err.required) {
+      // เครดิตไม่พอ
+      hideModal('extendModal');
+      document.getElementById('creditRequired').textContent = `฿ ${formatCurrency(err.required)}`;
+      document.getElementById('creditCurrent').textContent = `฿ ${formatCurrency(err.current)}`;
+      showModal('creditModal');
+    } else {
+      showToast(err.error || 'เกิดข้อผิดพลาด', 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ ยืนยันต่อเวลา';
+  }
+}
+

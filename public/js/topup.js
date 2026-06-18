@@ -5,10 +5,34 @@
 let selectedSlipFile = null;
 
 document.addEventListener('DOMContentLoaded', () => {
+  initTopup();
+});
+
+async function initTopup() {
+  const token = getToken();
+  if (!token) {
+    document.getElementById('loginRequired').classList.remove('hidden');
+    document.getElementById('topupContent').classList.add('hidden');
+    return;
+  }
+
+  document.getElementById('loginRequired').classList.add('hidden');
+  document.getElementById('topupContent').classList.remove('hidden');
+
   loadCurrentCredit();
   loadTopupHistory();
   setupDragDrop();
-});
+}
+
+// ถ้า login สำเร็จจากหน้า topup ให้ reload
+const origCheckSession = checkSession;
+checkSession = async function() {
+  await origCheckSession();
+  if (getToken()) {
+    initTopup();
+  }
+};
+
 
 // --- แสดงเครดิตปัจจุบัน ---
 async function loadCurrentCredit() {

@@ -28,23 +28,31 @@ const crypto = require('crypto');
 
 const TUYA_REGION_HOSTS = {
   us: 'https://openapi.tuyaus.com',
+  az: 'https://openapi.tuyaus.com',
   eu: 'https://openapi.tuyaeu.com',
   cn: 'https://openapi.tuyacn.com',
-  in: 'https://openapi.tuyain.com'
+  ay: 'https://openapi.tuyacn.com',
+  in: 'https://openapi.tuyain.com',
+  sg: 'https://openapi-sg.iotbing.com'
 };
 
-const TUYA_HOST = TUYA_REGION_HOSTS[process.env.TUYA_REGION || 'us'];
+const region = (process.env.TUYA_REGION || 'us').toLowerCase();
+const TUYA_HOST = TUYA_REGION_HOSTS[region] || TUYA_REGION_HOSTS['us'];
 const TUYA_CLIENT_ID = process.env.TUYA_CLIENT_ID;
 const TUYA_CLIENT_SECRET = process.env.TUYA_CLIENT_SECRET;
 
 // ดึง Tuya Access Token
 async function getTuyaAccessToken() {
   const t = Date.now().toString();
-  const str = TUYA_CLIENT_ID + t;
+  const method = 'GET';
+  const path = '/v1.0/token?grant_type=1';
+  const contentHash = crypto.createHash('sha256').update('').digest('hex');
+  const stringToSign = [method, contentHash, '', path].join('\n');
+  const str = TUYA_CLIENT_ID + t + stringToSign;
   const sign = crypto.createHmac('sha256', TUYA_CLIENT_SECRET)
     .update(str).digest('hex').toUpperCase();
 
-  const res = await fetch(`${TUYA_HOST}/v1.0/token?grant_type=1`, {
+  const res = await fetch(`${TUYA_HOST}${path}`, {
     headers: {
       'client_id': TUYA_CLIENT_ID,
       't': t,
@@ -831,7 +839,9 @@ app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res
         price_per_hour: parseFloat(price_per_hour),
         price_per_day: parseFloat(price_per_day),
         status: 'available',
-        rdp_ip, rdp_username, rdp_password,
+        rdp_ip: rdp_ip || null,
+        rdp_username: rdp_username || null,
+        rdp_password: rdp_password || null,
         anydesk_id, anydesk_password, tuya_device_id,
         image_url
       })
@@ -860,7 +870,9 @@ app.put('/api/admin/machines/:id', authMiddleware, adminMiddleware, async (req, 
         name, category, cpu, ram, ssd, gpu, os,
         price_per_hour: parseFloat(price_per_hour),
         price_per_day: parseFloat(price_per_day),
-        rdp_ip, rdp_username, rdp_password,
+        rdp_ip: rdp_ip || null,
+        rdp_username: rdp_username || null,
+        rdp_password: rdp_password || null,
         anydesk_id, anydesk_password, tuya_device_id,
         image_url
       })
@@ -871,7 +883,8 @@ app.put('/api/admin/machines/:id', authMiddleware, adminMiddleware, async (req, 
     if (error) throw error;
     res.json({ success: true, machine: data });
   } catch (err) {
-    res.status(500).json({ error: 'ไม่สามารถแก้ไขเครื่องได้' });
+    console.error('Update machine error:', err);
+    res.status(500).json({ error: 'ไม่สามารถแก้ไขเครื่องได้', details: err.message || err });
   }
 });
 

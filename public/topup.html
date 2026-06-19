@@ -75,7 +75,18 @@
       <h1 class="text-3xl font-bold text-white mb-2">💰 เติมเงินเข้าระบบ</h1>
       <p class="text-gray-500 text-sm mb-8">อัปโหลดสลิปโอนเงิน — ระบบจะตรวจสอบและเติมเครดิตให้อัตโนมัติ</p>
 
-      <div class="grid md:grid-cols-2 gap-8">
+      <!-- Tabs for Topup Methods -->
+      <div class="flex gap-2 mb-6 border-b border-white/5 pb-3">
+        <button id="method-promptpay" onclick="switchTopupMethod('promptpay')" class="px-4 py-2.5 text-sm font-semibold border-b-2 text-yellow-400 border-yellow-400 focus:outline-none transition">
+          💳 โอนเงินผ่านธนาคาร (PromptPay)
+        </button>
+        <button id="method-truemoney" onclick="switchTopupMethod('truemoney')" class="px-4 py-2.5 text-sm font-semibold border-b-2 text-gray-500 border-transparent hover:text-white focus:outline-none transition">
+          🧧 ซองของขวัญ TrueMoney Wallet
+        </button>
+      </div>
+
+      <!-- PromptPay Method Panel -->
+      <div id="panel-promptpay" class="grid md:grid-cols-2 gap-8">
         <!-- QR Code / ข้อมูลโอนเงิน -->
         <div class="cyber-card p-6">
           <h2 class="text-lg font-bold text-white mb-4">📱 ข้อมูลการโอนเงิน</h2>
@@ -138,6 +149,50 @@
           <div class="mt-4 p-3 bg-white/5 rounded-lg flex justify-between items-center">
             <span class="text-gray-400 text-sm">เครดิตปัจจุบัน</span>
             <span class="neon-text-yellow font-bold text-lg" id="currentCredit">฿ 0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TrueMoney Method Panel -->
+      <div id="panel-truemoney" class="hidden max-w-xl mx-auto">
+        <div class="cyber-card p-6">
+          <div class="flex items-center gap-3 mb-6">
+            <span class="text-3xl">🧧</span>
+            <div>
+              <h2 class="text-lg font-bold text-white">เติมเงินผ่านซองของขวัญ TrueMoney Wallet</h2>
+              <p class="text-xs text-gray-500 mt-0.5">ระบบจะรับเงินและเติมเข้าบัญชีให้โดยอัตโนมัติทันที</p>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">ลิงก์ซองของขวัญ TrueMoney Wallet</label>
+              <input id="angpaoUrl" type="url" class="cyber-input !py-3" placeholder="เช่น https://gift.truemoney.com/campaign/?v=xxxxxx" required>
+            </div>
+
+            <div class="p-4 bg-yellow-400/5 border border-yellow-400/10 rounded-xl space-y-2 text-xs text-yellow-400/80 leading-relaxed">
+              <p class="font-bold text-white">⚠️ คำแนะนำขั้นตอนการสร้างซองของขวัญ:</p>
+              <ol class="list-decimal list-inside space-y-1">
+                <li>เปิดแอป TrueMoney Wallet -> ไปที่เมนู "ส่งซองของขวัญ"</li>
+                <li>ใส่จำนวนเงินที่ต้องการเติม</li>
+                <li>เลือกประเภทการส่งซองเป็น <strong class="text-yellow-400">"แบ่งจ่ายแบบเท่ากัน"</strong></li>
+                <li>ใส่จำนวนคนที่รับซองเป็น <strong class="text-yellow-400">1 คน</strong> (สำคัญมาก เพื่อให้เงินเข้าเต็มจำนวน)</li>
+                <li>คัดลอกลิงก์ซองของขวัญที่ได้ มาวางในช่องด้านบนแล้วกดปุ่มยืนยัน</li>
+              </ol>
+            </div>
+
+            <button onclick="submitAngpao()" id="submitAngpaoBtn" class="btn-neon w-full !py-3.5 mt-2 flex items-center justify-center gap-2 font-semibold">
+              <span>🧧</span> ยืนยันการเติมเงิน
+            </button>
+
+            <!-- Result -->
+            <div id="angpaoResult" class="hidden"></div>
+          </div>
+
+          <!-- Current Credit inside TrueMoney panel -->
+          <div class="mt-6 p-3 bg-white/5 rounded-lg flex justify-between items-center">
+            <span class="text-gray-400 text-sm">เครดิตปัจจุบัน</span>
+            <span class="neon-text-yellow font-bold text-lg" id="currentCreditTrueMoney">฿ 0.00</span>
           </div>
         </div>
       </div>

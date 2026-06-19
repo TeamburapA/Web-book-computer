@@ -39,7 +39,11 @@ async function loadCurrentCredit() {
   if (!getToken()) return;
   try {
     const data = await apiFetch('/api/me');
-    document.getElementById('currentCredit').textContent = `฿ ${formatCurrency(data.user.credit)}`;
+    const creditText = `฿ ${formatCurrency(data.user.credit)}`;
+    const mainCredit = document.getElementById('currentCredit');
+    const tmCredit = document.getElementById('currentCreditTrueMoney');
+    if (mainCredit) mainCredit.textContent = creditText;
+    if (tmCredit) tmCredit.textContent = creditText;
   } catch (err) { /* ignore */ }
 }
 
@@ -198,5 +202,99 @@ async function loadTopupHistory() {
     `;
   } catch (err) {
     container.innerHTML = `<div class="text-center py-10 text-red-400">❌ โหลดข้อมูลไม่สำเร็จ</div>`;
+  }
+}
+
+// --- สลับช่องทางการเติมเงิน ---
+function switchTopupMethod(method) {
+  const isPromptPay = method === 'promptpay';
+  
+  // Toggle panels
+  document.getElementById('panel-promptpay').classList.toggle('hidden', !isPromptPay);
+  document.getElementById('panel-truemoney').classList.toggle('hidden', isPromptPay);
+  
+  // Toggle tab buttons styles
+  const btnPp = document.getElementById('method-promptpay');
+  const btnTm = document.getElementById('method-truemoney');
+  
+  if (isPromptPay) {
+    btnPp.className = 'px-4 py-2.5 text-sm font-semibold border-b-2 text-yellow-400 border-yellow-400 focus:outline-none transition';
+    btnTm.className = 'px-4 py-2.5 text-sm font-semibold border-b-2 text-gray-500 border-transparent hover:text-white focus:outline-none transition';
+  } else {
+    btnPp.className = 'px-4 py-2.5 text-sm font-semibold border-b-2 text-gray-500 border-transparent hover:text-white focus:outline-none transition';
+    btnTm.className = 'px-4 py-2.5 text-sm font-semibold border-b-2 text-yellow-400 border-yellow-400 focus:outline-none transition';
+  }
+
+  // Clear results
+  document.getElementById('slipResult').classList.add('hidden');
+  document.getElementById('angpaoResult').classList.add('hidden');
+}
+
+// --- ส่งซองของขวัญตรวจสอบ ---
+async function submitAngpao() {
+  if (!requireLogin()) return;
+
+  const urlInput = document.getElementById('angpaoUrl');
+  const voucher_url = urlInput.value.trim();
+
+  if (!voucher_url) {
+    showToast('กรุณากรอกลิงก์ซองของขวัญก่อน', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('submitAngpaoBtn');
+  const resultDiv = document.getElementById('angpaoResult');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px"></div>';
+
+  try {
+    const data = await apiFetch('/api/verify-angpao', {
+      method: 'POST',
+      body: { voucher_url }
+    });
+
+    resultDiv.classList.remove('hidden');
+    if (data.success) {
+      resultDiv.innerHTML = `
+        <div class="p-4 rounded-lg bg-green-500/10 border border-green-500/30">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xl">✅</span>
+            <span class="text-green-400 font-bold">${data.message}</span>
+          </div>
+          <p class="text-gray-400 text-sm">เครดิตใหม่: <span class="text-yellow-400 font-bold">฿ ${formatCurrency(data.new_credit)}</span></p>
+        </div>
+      `;
+      
+      const creditText = `฿ ${formatCurrency(data.new_credit)}`;
+      const mainCredit = document.getElementById('currentCredit');
+      const tmCredit = document.getElementById('currentCreditTrueMoney');
+      if (mainCredit) mainCredit.textContent = creditText;
+      if (tmCredit) tmCredit.textContent = creditText;
+
+      // อัปเดต cache
+      const user = getCachedUser();
+      if (user) { user.credit = data.new_credit; setCachedUser(user); updateNavbar(user); }
+
+      // รีเซ็ตฟอร์ม
+      urlInput.value = '';
+      loadTopupHistory();
+    } else {
+      resultDiv.innerHTML = `
+        <div class="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+          <p class="text-yellow-400">⚠️ ${data.message}</p>
+        </div>
+      `;
+    }
+
+  } catch (err) {
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = `
+      <div class="p-4 rounded-lg bg-red-500/10 border border-red-500/30">
+        <p class="text-red-400">❌ ${err.error || 'เกิดข้อผิดพลาดในการตรวจสอบซองของขวัญ'}</p>
+      </div>
+    `;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span>🧧</span> ยืนยันการเติมเงิน';
   }
 }

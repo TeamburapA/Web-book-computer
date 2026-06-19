@@ -490,14 +490,16 @@ function setupUserCreditForm() {
   });
 }
 
-// --- Settings Management (Facebook & Discord URL) ---
+// --- Settings Management (Facebook, Discord URL & TrueMoney Phone) ---
 async function loadAdminSettings() {
   try {
     const data = await apiFetch('/api/settings');
     const fbInput = document.getElementById('setting_facebook_url');
     const dcInput = document.getElementById('setting_discord_url');
+    const tmInput = document.getElementById('setting_truemoney_phone');
     if (fbInput) fbInput.value = data.facebook_url || '';
     if (dcInput) dcInput.value = data.discord_url || '';
+    if (tmInput) tmInput.value = data.truemoney_phone || '';
   } catch (err) {
     console.error('Error loading settings:', err);
   }
@@ -515,11 +517,12 @@ function setupSettingsForm() {
 
     const facebook_url = document.getElementById('setting_facebook_url').value;
     const discord_url = document.getElementById('setting_discord_url').value;
+    const truemoney_phone = document.getElementById('setting_truemoney_phone').value;
 
     try {
       await apiFetch('/api/admin/settings', {
         method: 'PUT',
-        body: { facebook_url, discord_url }
+        body: { facebook_url, discord_url, truemoney_phone }
       });
       showToast('บันทึกการตั้งค่าสำเร็จ', 'success');
     } catch (err) {

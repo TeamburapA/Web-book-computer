@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
--- เพิ่มค่าเริ่มต้น (Default Values) ของ Facebook และ Discord
 INSERT INTO settings (key, value) VALUES
 ('facebook_url', 'https://facebook.com'),
-('discord_url', 'https://discord.com')
+('discord_url', 'https://discord.com'),
+('truemoney_phone', '')
 ON CONFLICT (key) DO NOTHING;

@@ -914,6 +914,153 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
   }
 });
 
+// POST /api/verify-angpao — ตรวจสอบและแลกซองของขวัญ TrueMoney
+app.post('/api/verify-angpao', authMiddleware, async (req, res) => {
+  try {
+    const { voucher_url } = req.body;
+    if (!voucher_url) {
+      return res.status(400).json({ error: 'กรุณากรอกลิงก์ซองของขวัญ TrueMoney' });
+    }
+
+    // ดึงรหัสซองของขวัญ (voucher hash)
+    let voucherHash = null;
+    try {
+      const match = voucher_url.match(/v=([a-zA-Z0-9]+)/);
+      if (match) {
+        voucherHash = match[1];
+      } else if (/^[a-zA-Z0-9]+$/.test(voucher_url.trim())) {
+        voucherHash = voucher_url.trim();
+      }
+    } catch (e) {
+      // Ignored
+    }
+
+    if (!voucherHash) {
+      return res.status(400).json({ error: 'ลิงก์ซองของขวัญทรูมันนี่ไม่ถูกต้อง' });
+    }
+
+    // ตรวจสอบเบอร์ TrueMoney ของแอดมินจากระบบตั้งค่า
+    const settings = await getSettings();
+    const adminPhone = settings.truemoney_phone ? settings.truemoney_phone.trim() : '';
+    if (!adminPhone) {
+      return res.status(400).json({ error: 'ระบบเติมเงินผ่านซองของขวัญยังไม่เปิดใช้งาน (แอดมินยังไม่ได้ตั้งค่าเบอร์รับเงิน)' });
+    }
+
+    // ตรวจสอบว่าเคยใช้ซองนี้หรือยัง (ตรวจ transRef ซ้ำ)
+    const { data: existingTopup } = await supabase
+      .from('topups')
+      .select('id')
+      .eq('transaction_ref', voucherHash)
+      .single();
+
+    if (existingTopup) {
+      return res.status(400).json({ error: 'ซองของขวัญนี้ถูกใช้งานในระบบไปแล้ว ไม่สามารถใช้ซ้ำได้' });
+    }
+
+    // เรียก API ทรูมันนี่ เพื่อแลกซองของขวัญ ผ่าน curl เพื่อเลี่ยงการตรวจจับ TLS Fingerprint ของ Cloudflare
+    const curlCmd = process.platform === 'win32' ? 'curl.exe' : 'curl';
+    const { execFile } = require('child_process');
+    
+    const redeemUrl = `https://gift.truemoney.com/campaign/vouchers/${voucherHash}/redeem`;
+    const requestBody = JSON.stringify({
+      mobile: adminPhone,
+      voucher_hash: voucherHash
+    });
+    
+    const curlArgs = [
+      '-s',
+      '-X', 'POST',
+      '-H', 'Content-Type: application/json',
+      '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      '-d', requestBody,
+      redeemUrl
+    ];
+
+    const result = await new Promise((resolve, reject) => {
+      execFile(curlCmd, curlArgs, (error, stdout, stderr) => {
+        if (error) {
+          return reject(new Error(`Failed to execute curl: ${error.message}`));
+        }
+        try {
+          const json = JSON.parse(stdout);
+          resolve(json);
+        } catch (parseError) {
+          reject(new Error(`Failed to parse TrueMoney response: ${stdout || stderr}`));
+        }
+      });
+    });
+
+    // ตรวจสอบผลลัพธ์
+    const isSuccess = result.status && (result.status.code === 'SUCCESS' || result.status.message === 'success');
+    if (!isSuccess) {
+      let errMsg = 'ลิงก์ซองของขวัญไม่ถูกต้อง หรือถูกใช้งานไปแล้ว';
+      if (result.status && result.status.code) {
+        if (result.status.code === 'VOUCHER_OUT_OF_STOCK') {
+          errMsg = 'ซองของขวัญนี้ถูกรับไปหมดแล้ว';
+        } else if (result.status.code === 'VOUCHER_NOT_FOUND') {
+          errMsg = 'ไม่พบซองของขวัญนี้ในระบบ TrueMoney';
+        } else if (result.status.code === 'VOUCHER_EXPIRED') {
+          errMsg = 'ซองของขวัญนี้หมดอายุแล้ว';
+        } else if (result.status.code === 'TARGET_USER_REDEEMED') {
+          errMsg = 'เบอร์โทรศัพท์นี้ได้ทำการรับซองของขวัญนี้ไปแล้ว';
+        } else {
+          errMsg = `TrueMoney Error: ${result.status.code} - ${result.status.message || ''}`;
+        }
+      }
+      return res.status(400).json({ error: errMsg });
+    }
+
+    // ดึงจำนวนเงินที่ได้รับจริง
+    let amount = 0;
+    if (result.data && result.data.my_ticket && result.data.my_ticket.amount_baht) {
+      amount = parseFloat(result.data.my_ticket.amount_baht);
+    } else if (result.data && result.data.voucher && result.data.voucher.amount_baht) {
+      amount = parseFloat(result.data.voucher.amount_baht);
+    }
+
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'จำนวนเงินในซองไม่ถูกต้อง หรือซองว่างเปล่า' });
+    }
+
+    // เพิ่มเครดิตให้กับสมาชิก
+    const { data: user } = await supabase
+      .from('users')
+      .select('credit')
+      .eq('id', req.user.id)
+      .single();
+
+    const newCredit = parseFloat(user.credit) + amount;
+
+    await supabase
+      .from('users')
+      .update({ credit: newCredit })
+      .eq('id', req.user.id);
+
+    // ดึงชื่อผู้ส่งซอง (ถ้ามี)
+    const senderName = (result.data && result.data.owner_profile && result.data.owner_profile.full_name) || 'N/A';
+
+    // บันทึกในประวัติการเติมเงิน (topup record)
+    await supabase.from('topups').insert({
+      user_id: req.user.id,
+      amount: amount,
+      transaction_ref: voucherHash,
+      status: 'approved',
+      note: `ซองทรูมันนี่ — จากคุณ ${senderName}`,
+      slip_data: result.data
+    });
+
+    res.json({
+      success: true,
+      message: `เติมเงินสำเร็จ ${amount.toFixed(2)} บาท`,
+      new_credit: newCredit
+    });
+
+  } catch (err) {
+    console.error('Verify Angpao error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการตรวจสอบซองของขวัญ' });
+  }
+});
+
 // GET /api/my-topups — ประวัติเติมเงินของผู้ใช้
 app.get('/api/my-topups', authMiddleware, async (req, res) => {
   try {
@@ -967,12 +1114,13 @@ app.get('/api/my-active-machines', authMiddleware, async (req, res) => {
 });
 
 // =============================================
-// SETTINGS MANAGEMENT (Facebook & Discord Links)
+// SETTINGS MANAGEMENT (Facebook & Discord Links & TrueMoney Phone)
 // =============================================
 const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 const defaultSettings = {
   facebook_url: 'https://facebook.com',
-  discord_url: 'https://discord.com'
+  discord_url: 'https://discord.com',
+  truemoney_phone: ''
 };
 
 async function getSettings() {
@@ -1336,11 +1484,11 @@ app.put('/api/admin/users/:id/credit', authMiddleware, adminMiddleware, async (r
 // PUT /api/admin/settings — แก้ไขลิ้งก์ติดต่อ (Admin only)
 app.put('/api/admin/settings', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { facebook_url, discord_url } = req.body;
+    const { facebook_url, discord_url, truemoney_phone } = req.body;
     if (!facebook_url || !discord_url) {
       return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
     }
-    await updateSettings({ facebook_url, discord_url });
+    await updateSettings({ facebook_url, discord_url, truemoney_phone: truemoney_phone || '' });
     res.json({ success: true, message: 'บันทึกการตั้งค่าสำเร็จ' });
   } catch (err) {
     console.error('Update settings error:', err);

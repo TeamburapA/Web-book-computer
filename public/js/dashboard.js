@@ -63,6 +63,12 @@ async function loadActiveRentals() {
 
     document.getElementById('dashActiveMachines').textContent = machines.length;
 
+    const hasPowerOutage = machines.some(m => m.is_power_out);
+    const banner = document.getElementById('dashboardOutageBanner');
+    if (banner) {
+      banner.classList.toggle('hidden', !hasPowerOutage);
+    }
+
     if (machines.length === 0) {
       container.innerHTML = `
         <div class="text-center py-8 text-gray-500">
@@ -106,27 +112,27 @@ async function loadActiveRentals() {
             </div>
 
             <!-- AnyDesk Info — แสดงเลข AnyDesk และรหัสผ่าน -->
-            <div class="mb-3 p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/30">
-              <p class="text-xs text-cyan-400 font-bold uppercase tracking-wider mb-2">🖥️ AnyDesk Remote</p>
+            <div class="mb-3 p-3 rounded-xl bg-black/40 border border-white/10">
+              <p class="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2">🖥️ AnyDesk Remote</p>
               <div class="space-y-2">
                 <!-- AnyDesk ID -->
-                <div class="flex justify-between items-center p-2 rounded-lg bg-cyan-900/30 border border-cyan-500/20">
+                <div class="flex justify-between items-center p-2 rounded-lg bg-white/5 border border-white/5">
                   <span class="text-xs text-gray-400">เลข AnyDesk</span>
                   <div class="flex items-center gap-2">
-                    <span class="text-cyan-300 font-mono font-bold text-base tracking-widest">${m.anydesk_id || '-'}</span>
+                    <span class="text-white font-mono font-bold text-base tracking-widest">${m.anydesk_id || '-'}</span>
                     ${m.anydesk_id ? `<button onclick="copyToClipboard('${m.anydesk_id}', 'คัดลอกเลข AnyDesk แล้ว!')"
-                            class="text-cyan-500 hover:text-cyan-300 transition text-xs" title="คัดลอก">📋</button>` : ''}
+                            class="text-gray-400 hover:text-yellow-400 transition text-xs" title="คัดลอก">📋</button>` : ''}
                   </div>
                 </div>
                 <!-- AnyDesk Password -->
-                <div class="flex justify-between items-center p-2 rounded-lg bg-cyan-900/30 border border-cyan-500/20">
+                <div class="flex justify-between items-center p-2 rounded-lg bg-white/5 border border-white/5">
                   <span class="text-xs text-gray-400">รหัสผ่าน AnyDesk</span>
                   <div class="flex items-center gap-2">
-                    <span class="text-cyan-300 font-mono text-sm" id="dash-ad-pass-${m.id}">••••••••</span>
+                    <span class="text-white font-mono text-sm" id="dash-ad-pass-${m.id}">••••••••</span>
                     <button onclick="toggleDashAnyDeskPass(${m.id}, '${m.anydesk_password || ''}')"
-                            class="text-cyan-400 hover:text-cyan-300 transition" title="แสดง/ซ่อน">👁</button>
+                            class="text-gray-400 hover:text-yellow-400 transition" title="แสดง/ซ่อน">👁</button>
                     ${m.anydesk_password ? `<button onclick="copyToClipboard('${m.anydesk_password || ''}', 'คัดลอกรหัส AnyDesk แล้ว!')"
-                            class="text-cyan-500 hover:text-cyan-300 transition text-xs" title="คัดลอก">📋</button>` : ''}
+                            class="text-gray-400 hover:text-yellow-400 transition text-xs" title="คัดลอก">📋</button>` : ''}
                   </div>
                 </div>
               </div>
@@ -134,15 +140,15 @@ async function loadActiveRentals() {
 
             <!-- Power Control Buttons — เปิด/ปิดผ่าน Tuya -->
             ${m.tuya_device_id ? `
-            <div class="mb-3 p-3 rounded-xl bg-white/5 border border-white/10" id="power-control-${m.id}">
+            <div class="mb-3 p-3 rounded-xl bg-white/5 border border-white/10 ${m.is_power_out ? 'opacity-50 pointer-events-none' : ''}" id="power-control-${m.id}">
               <p class="text-xs text-gray-400 font-semibold mb-2">⚡ ควบคุมเครื่อง (Tuya Smart)</p>
               <div class="grid grid-cols-2 gap-2">
-                <button onclick="dashPowerMachine(${m.id}, 'on', this)" id="btn-power-on-${m.id}"
+                <button onclick="dashPowerMachine(${m.id}, 'on', this)" id="btn-power-on-${m.id}" ${m.is_power_out ? 'disabled' : ''}
                         class="flex flex-col items-center gap-1 py-2 px-1 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 hover:bg-green-500/20 hover:border-green-500 transition text-xs font-semibold">
                   <span class="text-lg">🟢</span>
                   <span>เปิดเครื่อง</span>
                 </button>
-                <button onclick="dashPowerMachine(${m.id}, 'off', this)" id="btn-power-off-${m.id}"
+                <button onclick="dashPowerMachine(${m.id}, 'off', this)" id="btn-power-off-${m.id}" ${m.is_power_out ? 'disabled' : ''}
                         class="flex flex-col items-center gap-1 py-2 px-1 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:border-red-500 transition text-xs font-semibold">
                   <span class="text-lg">🔴</span>
                   <span>ปิดเครื่อง</span>
@@ -152,8 +158,8 @@ async function loadActiveRentals() {
             ` : ''}
 
             <div class="grid grid-cols-2 gap-2 mt-2">
-              <button onclick="openExtendModal(${m.id})" class="btn-neon text-xs !py-2 flex items-center justify-center gap-1">➕ ต่อเวลา</button>
-              <button onclick="dashReleaseMachine(${m.id})" class="btn-outline text-xs !py-2 border-red-500/30 text-red-400 hover:!border-red-500 flex items-center justify-center gap-1">🔓 คืนเครื่อง</button>
+              <button onclick="openExtendModal(${m.id})" ${m.is_power_out ? 'disabled' : ''} class="btn-neon text-xs !py-2 flex items-center justify-center gap-1 ${m.is_power_out ? 'opacity-50 cursor-not-allowed' : ''}">➕ ต่อเวลา</button>
+              <button onclick="dashReleaseMachine(${m.id})" ${m.is_power_out ? 'disabled' : ''} class="btn-outline text-xs !py-2 border-red-500/30 text-red-400 hover:!border-red-500 flex items-center justify-center gap-1 ${m.is_power_out ? 'opacity-50 cursor-not-allowed' : ''}">🔓 คืนเครื่อง</button>
             </div>
           </div>
         `).join('')}
@@ -163,7 +169,7 @@ async function loadActiveRentals() {
     // Start countdowns
     machines.forEach(m => {
       if (m.session_end_time) {
-        startDashCountdown(m.id, m.session_end_time);
+        startDashCountdown(m.id, m.session_end_time, m.is_power_out);
       }
       // Resume power lock if active in localStorage
       const lockUntil = parseInt(localStorage.getItem(`power_lock_until_${m.id}`) || '0', 10);
@@ -177,7 +183,7 @@ async function loadActiveRentals() {
   }
 }
 
-function startDashCountdown(machineId, endTimeStr) {
+function startDashCountdown(machineId, endTimeStr, isPowerOut) {
   const el = document.getElementById(`dash-countdown-${machineId}`);
   if (!el) return;
 
@@ -185,8 +191,14 @@ function startDashCountdown(machineId, endTimeStr) {
   if (dashCountdownIntervals[machineId]) clearInterval(dashCountdownIntervals[machineId]);
 
   function update() {
+    if (isPowerOut) {
+      el.textContent = 'ระงับเวลา (ไฟดับ)';
+      el.className = 'text-red-400 font-bold';
+      return;
+    }
     const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
     el.textContent = formatCountdown(remaining);
+    el.className = 'countdown font-mono';
     if (remaining <= 300) el.classList.add('warning');
     if (remaining <= 0) {
       clearInterval(dashCountdownIntervals[machineId]);

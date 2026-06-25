@@ -8,7 +8,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
-      theme: { extend: { fontFamily: { prompt: ['Prompt','sans-serif'] }, colors: { neon: { yellow: '#facc15', pink: '#ec4899' }, cyber: { dark: '#0a0a0f', card: '#12121a', surface: '#1a1a2e', border: '#2a2a3e' } } } }
+      theme: { extend: { fontFamily: { prompt: ['Prompt','sans-serif'] }, colors: { neon: { yellow: '#facc15', pink: '#ec4899' }, cyber: { dark: '#07070a', card: '#0e0e13', surface: '#121218', border: '#1f1f27' } } } }
     }
   </script>
   <link rel="stylesheet" href="/css/style.css">
@@ -66,6 +66,15 @@
 
     <!-- Dashboard Content -->
     <div id="dashboardContent" class="hidden">
+      <!-- Power Outage Banner -->
+      <div id="dashboardOutageBanner" class="hidden mb-6 p-4 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl flex items-center gap-3">
+        <span class="text-2xl animate-pulse">🚨</span>
+        <div>
+          <p class="font-bold text-sm">ขณะนี้ระบบร้านอยู่ในสถานะ "ไฟดับ" ชั่วคราว</p>
+          <p class="text-xs text-red-400/80 mt-0.5">เวลาการเช่าเครื่องคอมพิวเตอร์ของคุณถูกหยุดนับถอยหลังไว้ชั่วคราว (เวลาไม่ลดลง) เมื่อกระแสไฟฟ้ากลับมาปกติ เวลาเช่าของคุณจะดำเนินต่อตามปกติโดยอัตโนมัติ</p>
+        </div>
+      </div>
+
       <h1 class="text-3xl font-bold text-white mb-2">📊 แดชบอร์ดของฉัน</h1>
       <p class="text-gray-500 text-sm mb-8">ข้อมูลบัญชี เครื่องที่เช่า และประวัติการใช้งาน</p>
 

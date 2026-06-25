@@ -89,15 +89,15 @@ function formatCountdown(seconds) {
 // --- Status Badge ---
 function statusBadge(status) {
   const map = {
-    available: { text: '🟢 ว่าง', class: 'badge-available' },
-    in_use: { text: '🟡 กำลังใช้งาน', class: 'badge-in-use' },
-    maintenance: { text: '🔴 ปิดซ่อม', class: 'badge-maintenance' },
-    clearing: { text: '🟡 กำลังเคลียข้อมูล', class: 'badge-clearing' },
-    pending: { text: '⏳ รอตรวจสอบ', class: 'badge-pending' },
-    approved: { text: '✅ อนุมัติ', class: 'badge-approved' },
-    rejected: { text: '❌ ปฏิเสธ', class: 'badge-rejected' },
-    active: { text: '🟡 กำลังเช่า', class: 'badge-in-use' },
-    completed: { text: '✅ เสร็จสิ้น', class: 'badge-approved' }
+    available: { text: 'ว่าง', class: 'badge-available' },
+    in_use: { text: 'กำลังใช้งาน', class: 'badge-in-use' },
+    maintenance: { text: 'ปิดซ่อม', class: 'badge-maintenance' },
+    clearing: { text: 'กำลังเคลียร์ข้อมูล', class: 'badge-clearing' },
+    pending: { text: 'รอตรวจสอบ', class: 'badge-pending' },
+    approved: { text: 'อนุมัติ', class: 'badge-approved' },
+    rejected: { text: 'ปฏิเสธ', class: 'badge-rejected' },
+    active: { text: 'กำลังเช่า', class: 'badge-in-use' },
+    completed: { text: 'เสร็จสิ้น', class: 'badge-approved' }
   };
   const info = map[status] || { text: status, class: '' };
   return `<span class="badge ${info.class}">${info.text}</span>`;

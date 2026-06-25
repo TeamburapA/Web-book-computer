@@ -36,6 +36,7 @@ async function initAdmin() {
 
     setupMachineForm();
     setupUserCreditForm();
+    setupUserTimeForm();
     setupSettingsForm();
   } catch (err) {
     document.getElementById('accessDenied').classList.remove('hidden');
@@ -122,7 +123,7 @@ async function loadAdminMachines() {
               <td class="whitespace-nowrap">
                 <span class="text-pink-400 font-bold">฿${formatCurrency(m.price_per_day)}</span><span class="text-gray-500 text-xs">/วัน</span>
               </td>
-              <td>${statusBadge(m.status)}</td>
+              <td>${m.is_power_out ? `<span class="badge bg-red-500/20 text-red-400 border border-red-500/30">🔌 ไฟดับ (หยุดเวลา)</span>` : statusBadge(m.status)}</td>
               <td class="text-xs font-mono text-cyan-400">${m.anydesk_id || '-'}</td>
               <td class="whitespace-nowrap">
                 ${m.tuya_device_id ? `
@@ -135,6 +136,11 @@ async function loadAdminMachines() {
               <td class="whitespace-nowrap">
                 <div class="flex gap-1">
                   <button onclick="editMachine(${m.id})" class="px-2 py-1 text-xs bg-blue-500/10 text-blue-400 rounded border border-blue-500/20 hover:bg-blue-500/20 transition" title="แก้ไข">✏️</button>
+                  ${m.is_power_out ? `
+                    <button onclick="toggleMachinePowerOutage(${m.id}, 'deactivate')" class="px-2 py-1 text-xs bg-green-500/10 text-green-400 rounded border border-green-500/20 hover:bg-green-500/20 transition" title="ไฟกลับมาปกติ">🔌ไฟปกติ</button>
+                  ` : `
+                    <button onclick="toggleMachinePowerOutage(${m.id}, 'activate')" class="px-2 py-1 text-xs bg-red-500/10 text-red-400 rounded border border-red-500/20 hover:bg-red-500/20 transition" title="เปิดโหมดไฟดับ">🔌ไฟดับ</button>
+                  `}
                   ${m.status === 'available' ? `
                     <button onclick="changeMachineStatus(${m.id}, 'maintenance')" class="px-2 py-1 text-xs bg-orange-500/10 text-orange-400 rounded border border-orange-500/20 hover:bg-orange-500/20 transition" title="ปิดซ่อม">🔧</button>
                   ` : m.status === 'maintenance' ? `
@@ -390,6 +396,35 @@ async function loadAdminTopups() {
 }
 
 // --- User Management (Admin) ---
+let adminCountdownIntervals = {};
+
+function startAdminCountdown(userId, endTimeStr, isPowerOut) {
+  const el = document.getElementById(`admin-countdown-${userId}`);
+  if (!el) return;
+
+  const endTime = new Date(endTimeStr).getTime();
+  if (adminCountdownIntervals[userId]) clearInterval(adminCountdownIntervals[userId]);
+
+  function update() {
+    if (isPowerOut) {
+      el.textContent = 'ระงับเวลา (ไฟดับ)';
+      el.className = 'text-red-400 font-bold';
+      return;
+    }
+
+    const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+    el.textContent = formatCountdown(remaining);
+    el.className = remaining <= 300 ? 'text-red-400 font-bold animate-pulse' : 'text-gray-300 font-mono';
+    
+    if (remaining <= 0) {
+      clearInterval(adminCountdownIntervals[userId]);
+      setTimeout(() => loadAdminUsers(), 2000);
+    }
+  }
+  update();
+  adminCountdownIntervals[userId] = setInterval(update, 1000);
+}
+
 async function loadAdminUsers() {
   const container = document.getElementById('adminUserList');
   try {
@@ -399,12 +434,18 @@ async function loadAdminUsers() {
       return;
     }
 
+    // Clear old countdowns
+    Object.values(adminCountdownIntervals).forEach(clearInterval);
+    adminCountdownIntervals = {};
+
     container.innerHTML = `
       <table class="cyber-table">
         <thead>
           <tr>
             <th>ID</th>
             <th>ชื่อผู้ใช้</th>
+            <th>เครื่องที่เช่า</th>
+            <th>เวลาที่เหลือ</th>
             <th>ยอดเงินคงเหลือ</th>
             <th>บทบาท</th>
             <th>วันที่สมัคร</th>
@@ -416,6 +457,21 @@ async function loadAdminUsers() {
             <tr>
               <td class="font-mono text-xs text-gray-500">${u.id}</td>
               <td class="font-semibold text-white whitespace-nowrap">${u.username}</td>
+              <td>
+                ${u.active_machine 
+                  ? (u.active_machine.is_power_out
+                    ? `<span class="badge bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">🔌 ไฟดับ: ${u.active_machine.name}</span>`
+                    : `<span class="badge badge-in-use">${u.active_machine.name}</span>`
+                  )
+                  : `<span class="text-gray-500 text-sm">ว่าง</span>`
+                }
+              </td>
+              <td>
+                ${u.active_machine 
+                  ? `<span class="admin-countdown font-mono text-xs" id="admin-countdown-${u.id}" data-end="${u.active_machine.session_end_time}">--:--:--</span>`
+                  : `<span class="text-gray-500 text-sm">-</span>`
+                }
+              </td>
               <td class="text-yellow-400 font-bold">฿${formatCurrency(u.credit)}</td>
               <td>
                 <span class="px-2 py-0.5 text-xs rounded-full ${
@@ -428,16 +484,33 @@ async function loadAdminUsers() {
               </td>
               <td class="text-xs whitespace-nowrap">${formatDate(u.created_at)}</td>
               <td class="whitespace-nowrap">
-                <button onclick="openUserCreditModal('${u.id}', '${u.username}', ${u.credit})"
-                        class="px-3 py-1 text-xs bg-yellow-500/10 text-yellow-400 rounded border border-yellow-500/20 hover:bg-yellow-500/20 transition flex items-center gap-1 font-semibold">
-                  💰 จัดการเงิน
-                </button>
+                <div class="flex gap-2">
+                  <button onclick="openUserCreditModal('${u.id}', '${u.username}', ${u.credit})"
+                          class="px-2 py-1 text-xs bg-yellow-500/10 text-yellow-400 rounded border border-yellow-500/20 hover:bg-yellow-500/20 transition flex items-center gap-1 font-semibold">
+                    💰 จัดการเงิน
+                  </button>
+                  ${u.active_machine 
+                    ? `<button onclick="openUserTimeModal('${u.id}', '${u.username}', '${u.active_machine.name}', '${u.active_machine.session_end_time}')"
+                               class="px-2 py-1 text-xs bg-green-500/10 text-green-400 rounded border border-green-500/20 hover:bg-green-500/20 transition flex items-center gap-1 font-semibold">
+                         ⏰ เพิ่มเวลา
+                       </button>`
+                    : ''
+                  }
+                </div>
               </td>
             </tr>
           `).join('')}
         </tbody>
       </table>
     `;
+
+    // Start countdowns
+    data.users.forEach(u => {
+      if (u.active_machine && u.active_machine.session_end_time) {
+        startAdminCountdown(u.id, u.active_machine.session_end_time, u.active_machine.is_power_out);
+      }
+    });
+
   } catch (err) {
     container.innerHTML = `<div class="text-center py-8 text-red-400">❌ โหลดข้อมูลผู้ใช้ไม่สำเร็จ</div>`;
   }
@@ -490,6 +563,51 @@ function setupUserCreditForm() {
   });
 }
 
+function openUserTimeModal(userId, username, machineName, sessionEndTime) {
+  document.getElementById('ut_user_id').value = userId;
+  document.getElementById('ut_username').textContent = username;
+  document.getElementById('ut_machinename').textContent = machineName;
+  document.getElementById('ut_current_end').textContent = formatDate(sessionEndTime);
+  document.getElementById('ut_duration').value = '';
+  document.getElementById('ut_unit').value = 'hours';
+  showModal('userTimeModal');
+}
+
+function setupUserTimeForm() {
+  const form = document.getElementById('userTimeForm');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('userTimeSubmitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px"></div>';
+
+    const userId = document.getElementById('ut_user_id').value;
+    const duration = document.getElementById('ut_duration').value;
+    const unit = document.getElementById('ut_unit').value;
+
+    try {
+      const response = await apiFetch(`/api/admin/users/${userId}/extend-session`, {
+        method: 'POST',
+        body: { duration, unit }
+      });
+
+      showToast(response.message || 'เพิ่มเวลาเช่าเครื่องสำเร็จ', 'success');
+      hideModal('userTimeModal');
+      await Promise.all([
+        loadAdminUsers(),
+        loadAdminStats()
+      ]);
+    } catch (err) {
+      showToast(err.error || 'เกิดข้อผิดพลาดในการเพิ่มเวลาเช่าเครื่อง', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '💾 ยืนยันเพิ่มเวลา';
+    }
+  });
+}
+
 // --- Settings Management (Facebook, Discord URL & TrueMoney Phone) ---
 async function loadAdminSettings() {
   try {
@@ -532,4 +650,25 @@ function setupSettingsForm() {
       btn.textContent = '💾 บันทึกการตั้งค่า';
     }
   });
+}
+
+// --- Power Outage Toggle (Admin - Per Machine) ---
+async function toggleMachinePowerOutage(id, action) {
+  const actionLabel = action === 'activate' ? 'เปิดโหมดไฟดับ' : 'ยกเลิกโหมดไฟดับ';
+  if (!confirm(`ต้องการ "${actionLabel}" สำหรับเครื่องคอมพิวเตอร์เครื่องนี้ใช่หรือไม่?\nการกระทำนี้จะหยุดเวลาระบบชั่วคราวสำหรับเครื่องนี้เท่านั้น`)) return;
+
+  try {
+    showToast(`กำลังส่งคำสั่ง ${actionLabel}...`, 'info');
+    const response = await apiFetch(`/api/admin/machines/${id}/power-outage`, {
+      method: 'POST',
+      body: { action }
+    });
+    showToast(response.message || 'บันทึกสถานะสำเร็จ', 'success');
+    await Promise.all([
+      loadAdminMachines(),
+      loadAdminUsers()
+    ]);
+  } catch (err) {
+    showToast(err.error || 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะ', 'error');
+  }
 }

@@ -59,34 +59,55 @@ function renderMachines(machines) {
 
   grid.innerHTML = machines.map((m, idx) => {
     const isMyMachine = currentUser && m.current_user_id === currentUser.id;
-    const gradientClass = 'from-yellow-500/20 to-purple-500/20';
 
     return `
-      <div class="cyber-card animate-slide-up" style="animation-delay: ${idx * 0.05}s" id="machine-card-${m.id}">
-        <!-- Header gradient -->
-        <div class="h-32 bg-gradient-to-br ${gradientClass} relative flex items-center justify-center">
-          <span class="text-5xl opacity-50">🖥️</span>
-          <div class="absolute top-3 right-3">${statusBadge(m.status)}</div>
+      <div class="cyber-card animate-slide-up group" style="animation-delay: ${idx * 0.05}s" id="machine-card-${m.id}">
+        <!-- Header flat image area -->
+        <div class="h-32 bg-[#09090d] border-b border-[#1f1f27] relative flex items-center justify-center overflow-hidden">
+          ${m.image_url ? `
+            <img src="${m.image_url}" alt="${m.name}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
+          ` : `
+            <span class="text-5xl opacity-40 transition-transform duration-500 group-hover:scale-110">🖥️</span>
+          `}
+          <div class="absolute top-3 right-3">${m.is_power_out ? '<span class="badge bg-red-500/20 text-red-400 border border-red-500/30">🔌 ไฟดับ</span>' : statusBadge(m.status)}</div>
         </div>
 
         <!-- Content -->
         <div class="p-5">
-          <h3 class="text-lg font-bold text-white mb-3">${m.name}</h3>
+          <h3 class="text-md font-bold text-white mb-3 tracking-wide">${m.name}</h3>
 
           <!-- Specs -->
-          <div class="space-y-1 mb-4">
-            <div class="spec-item"><span class="spec-icon">⚙️</span><span>${m.cpu || '-'}</span></div>
-            <div class="spec-item"><span class="spec-icon">🧠</span><span>${m.ram || '-'}</span></div>
-            <div class="spec-item"><span class="spec-icon">💾</span><span>${m.ssd || '-'}</span></div>
-            <div class="spec-item"><span class="spec-icon">🎨</span><span>${m.gpu || '-'}</span></div>
-            <div class="spec-item"><span class="spec-icon">💻</span><span>${m.os || '-'}</span></div>
+          <div class="grid grid-cols-1 gap-2 my-4 bg-[#050508] p-3 rounded-md border border-[#14141a]">
+            <div class="flex items-center gap-2 text-xs">
+              <span class="w-10 text-[9px] tracking-wider text-center font-bold py-0.5 rounded bg-[#13131a] text-[#facc15] border border-white/5 font-mono">CPU</span>
+              <span class="truncate text-zinc-300 font-medium">${m.cpu || '-'}</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="w-10 text-[9px] tracking-wider text-center font-bold py-0.5 rounded bg-[#13131a] text-[#ec4899] border border-white/5 font-mono">RAM</span>
+              <span class="truncate text-zinc-300 font-medium">${m.ram || '-'}</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="w-10 text-[9px] tracking-wider text-center font-bold py-0.5 rounded bg-[#13131a] text-cyan-400 border border-white/5 font-mono">DISK</span>
+              <span class="truncate text-zinc-300 font-medium">${m.ssd || '-'}</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="w-10 text-[9px] tracking-wider text-center font-bold py-0.5 rounded bg-[#13131a] text-purple-400 border border-white/5 font-mono">GPU</span>
+              <span class="truncate text-zinc-300 font-medium">${m.gpu || '-'}</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="w-10 text-[9px] tracking-wider text-center font-bold py-0.5 rounded bg-[#13131a] text-emerald-400 border border-white/5 font-mono">OS</span>
+              <span class="truncate text-zinc-300 font-medium">${m.os || '-'}</span>
+            </div>
           </div>
 
           <!-- Price -->
-          <div class="flex items-center justify-between py-3 border-t border-white/5">
-            <div>
-              <span class="text-pink-400 font-bold text-lg">฿${formatCurrency(m.price_per_day)}</span>
-              <span class="text-gray-500 text-xs">/วัน</span>
+          <div class="flex items-center justify-between py-3 border-t border-[#1f1f27]">
+            <div class="flex flex-col">
+              <span class="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">ราคาเช่า</span>
+              <div class="flex items-baseline gap-0.5 mt-0.5">
+                <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_day).split('.')[0]}</span>
+                <span class="text-zinc-500 text-xs font-semibold">/วัน</span>
+              </div>
             </div>
           </div>
 
@@ -98,12 +119,12 @@ function renderMachines(machines) {
                 <span class="countdown" id="countdown-${m.id}" data-end="${m.session_end_time}">--:--:--</span>
               </div>
               <div id="anydesk-info-${m.id}" class="mt-2">
-                <button onclick="loadAnydeskInfo(${m.id})" class="text-xs text-cyan-400 hover:underline">🖥️ แสดงข้อมูล AnyDesk</button>
+                <button onclick="loadAnydeskInfo(${m.id})" class="text-xs text-gray-400 hover:text-yellow-400 hover:underline transition">🖥️ แสดงข้อมูล AnyDesk</button>
               </div>
             </div>
             <div class="grid grid-cols-2 gap-2 mt-3">
-              <button onclick="openExtendModal(${m.id})" class="btn-neon text-sm !py-2">➕ ต่อเวลา</button>
-              <button onclick="releaseMachine(${m.id})" class="btn-outline text-sm !py-2 border-red-500/30 text-red-400 hover:!border-red-500 hover:!text-red-400">🔓 คืนเครื่อง</button>
+              <button onclick="openExtendModal(${m.id})" ${m.is_power_out ? 'disabled' : ''} class="btn-neon text-sm !py-2 ${m.is_power_out ? 'opacity-50 cursor-not-allowed' : ''}">➕ ต่อเวลา</button>
+              <button onclick="releaseMachine(${m.id})" ${m.is_power_out ? 'disabled' : ''} class="btn-outline text-sm !py-2 border-red-500/30 text-red-400 hover:!border-red-500 hover:!text-red-400 ${m.is_power_out ? 'opacity-50 cursor-not-allowed' : ''}">🔓 คืนเครื่อง</button>
             </div>
           ` : m.status === 'in_use' ? `
             <!-- In use by someone else -->
@@ -113,7 +134,7 @@ function renderMachines(machines) {
             </div>
           ` : m.status === 'available' ? `
             <!-- Available — Rent button -->
-            <button onclick="openRentalModal(${m.id})" class="mt-3 w-full btn-neon text-sm !py-2.5">⚡ เช่าเครื่องนี้</button>
+            <button onclick="openRentalModal(${m.id})" ${m.is_power_out ? 'disabled' : ''} class="mt-3 w-full btn-neon text-sm !py-2.5 ${m.is_power_out ? 'opacity-50 cursor-not-allowed' : ''}">${m.is_power_out ? '🔌 ไฟดับ (งดเช่า)' : '⚡ เช่าเครื่องนี้'}</button>
           ` : m.status === 'clearing' ? `
             <!-- Clearing data -->
             <div class="mt-3 text-center py-2 text-yellow-400/80 text-sm font-semibold animate-pulse">⏳ กำลังเคลียข้อมูล...</div>
@@ -128,12 +149,12 @@ function renderMachines(machines) {
 
   // เริ่ม countdown สำหรับเครื่องที่ in_use
   machines.filter(m => m.status === 'in_use' && m.session_end_time).forEach(m => {
-    startCountdown(m.id, m.session_end_time);
+    startCountdown(m.id, m.session_end_time, m.is_power_out);
   });
 }
 
 // --- Countdown Timer ---
-function startCountdown(machineId, endTimeStr) {
+function startCountdown(machineId, endTimeStr, isPowerOut) {
   const el = document.getElementById(`countdown-${machineId}`);
   if (!el) return;
 
@@ -143,10 +164,18 @@ function startCountdown(machineId, endTimeStr) {
   if (countdownIntervals[machineId]) clearInterval(countdownIntervals[machineId]);
 
   function update() {
+    if (isPowerOut) {
+      el.textContent = 'ระงับเวลา (ไฟดับ)';
+      el.classList.add('text-red-400', 'font-bold');
+      el.classList.remove('countdown');
+      return;
+    }
     const now = Date.now();
     const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
 
     el.textContent = formatCountdown(remaining);
+    el.classList.remove('text-red-400', 'font-bold');
+    el.classList.add('countdown');
 
     if (remaining <= 300) { // น้อยกว่า 5 นาที
       el.classList.add('warning');
@@ -362,19 +391,19 @@ async function loadAnydeskInfo(machineId) {
     const data = await apiFetch(`/api/machines/${machineId}/anydesk`);
     container.innerHTML = `
       <div class="space-y-2 text-xs">
-        <div class="flex justify-between items-center p-2 bg-black/30 rounded">
+        <div class="flex justify-between items-center p-2 bg-black/40 border border-white/5 rounded-lg">
           <span class="text-gray-400">AnyDesk ID:</span>
           <div class="flex items-center gap-1">
             <span class="text-white font-mono font-bold">${data.anydesk_id || '-'}</span>
-            ${data.anydesk_id ? `<button onclick="copyToClipboard('${data.anydesk_id}', 'คัดลอกเลข AnyDesk แล้ว!')" class="text-cyan-400 hover:text-cyan-300 text-xs ml-1" title="คัดลอก">📋</button>` : ''}
+            ${data.anydesk_id ? `<button onclick="copyToClipboard('${data.anydesk_id}', 'คัดลอกเลข AnyDesk แล้ว!')" class="text-gray-400 hover:text-yellow-400 text-xs ml-1 transition" title="คัดลอก">📋</button>` : ''}
           </div>
         </div>
-        <div class="flex justify-between items-center p-2 bg-black/30 rounded">
+        <div class="flex justify-between items-center p-2 bg-black/40 border border-white/5 rounded-lg">
           <span class="text-gray-400">AnyDesk Pass:</span>
           <div class="flex items-center gap-1">
             <span class="text-white font-mono" id="anydesk-pass-${machineId}">••••••••</span>
-            <button onclick="toggleAnydeskPass(${machineId}, '${data.anydesk_password || ''}')" class="text-cyan-400 hover:text-cyan-300 ml-1">👁</button>
-            ${data.anydesk_password ? `<button onclick="copyToClipboard('${data.anydesk_password}', 'คัดลอกรหัส AnyDesk แล้ว!')" class="text-cyan-400 hover:text-cyan-300 text-xs ml-1" title="คัดลอก">📋</button>` : ''}
+            <button onclick="toggleAnydeskPass(${machineId}, '${data.anydesk_password || ''}')" class="text-gray-400 hover:text-yellow-400 ml-1 transition">👁</button>
+            ${data.anydesk_password ? `<button onclick="copyToClipboard('${data.anydesk_password}', 'คัดลอกรหัส AnyDesk แล้ว!')" class="text-gray-400 hover:text-yellow-400 text-xs ml-1 transition" title="คัดลอก">📋</button>` : ''}
           </div>
         </div>
       </div>

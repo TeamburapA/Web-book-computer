@@ -267,11 +267,15 @@ app.get('/api/machines', async (req, res) => {
       query = query.eq('category', category);
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
+    const [machinesRes, settings] = await Promise.all([
+      query,
+      getSettings()
+    ]);
+
+    if (machinesRes.error) throw machinesRes.error;
 
     // ซ่อนข้อมูลส่วนตัวจาก response สาธารณะ — จะส่งแยกเฉพาะผู้เช่า
-    const sanitized = data.map(m => {
+    const sanitized = machinesRes.data.map(m => {
       const machine = { ...m };
       delete machine.rdp_ip;
       delete machine.rdp_username;
@@ -279,6 +283,7 @@ app.get('/api/machines', async (req, res) => {
       delete machine.anydesk_id;
       delete machine.anydesk_password;
       delete machine.tuya_device_id;
+      machine.is_power_out = settings[`outage_machine_${m.id}`] === 'true';
       return machine;
     });
 
@@ -432,6 +437,14 @@ app.post('/api/machines/:id/power-user', authMiddleware, async (req, res) => {
 app.post('/api/rent', authMiddleware, async (req, res) => {
   try {
     const { machine_id, duration_hours, rent_unit, rent_quantity } = req.body;
+    if (!machine_id) {
+      return res.status(400).json({ error: 'กรุณาเลือกเครื่องคอมพิวเตอร์' });
+    }
+
+    const settings = await getSettings();
+    if (settings[`outage_machine_${machine_id}`] === 'true') {
+      return res.status(400).json({ error: 'ไม่สามารถเช่าเครื่องนี้ได้ในขณะนี้ เนื่องจากเครื่องอยู่ในสถานะไฟดับ' });
+    }
 
     if (!machine_id || (!duration_hours && (!rent_unit || !rent_quantity))) {
       return res.status(400).json({ error: 'กรุณาเลือกเครื่องและระยะเวลา' });
@@ -564,6 +577,14 @@ app.post('/api/rent', authMiddleware, async (req, res) => {
 app.post('/api/rent/extend', authMiddleware, async (req, res) => {
   try {
     const { machine_id, rent_unit, rent_quantity } = req.body;
+    if (!machine_id) {
+      return res.status(400).json({ error: 'ข้อมูลเครื่องคอมพิวเตอร์ไม่ถูกต้อง' });
+    }
+
+    const settings = await getSettings();
+    if (settings[`outage_machine_${machine_id}`] === 'true') {
+      return res.status(400).json({ error: 'ไม่สามารถต่อเวลาได้ในขณะนี้ เนื่องจากเครื่องคอมพิวเตอร์เครื่องนี้อยู่ในสถานะไฟดับ' });
+    }
 
     if (!machine_id || !rent_unit || !rent_quantity) {
       return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
@@ -1100,14 +1121,23 @@ app.get('/api/my-rentals', authMiddleware, async (req, res) => {
 // GET /api/my-active-machines — เครื่องที่กำลังเช่าอยู่
 app.get('/api/my-active-machines', authMiddleware, async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('machines')
-      .select('*')
-      .eq('current_user_id', req.user.id)
-      .eq('status', 'in_use');
+    const [machinesRes, settings] = await Promise.all([
+      supabase
+        .from('machines')
+        .select('*')
+        .eq('current_user_id', req.user.id)
+        .eq('status', 'in_use'),
+      getSettings()
+    ]);
 
-    if (error) throw error;
-    res.json({ machines: data });
+    if (machinesRes.error) throw machinesRes.error;
+
+    const machines = machinesRes.data.map(m => ({
+      ...m,
+      is_power_out: settings[`outage_machine_${m.id}`] === 'true'
+    }));
+
+    res.json({ machines: machines });
   } catch (err) {
     res.status(500).json({ error: 'เกิดข้อผิดพลาด' });
   }
@@ -1219,12 +1249,19 @@ app.get('/api/admin/stats', authMiddleware, adminMiddleware, async (req, res) =>
 // GET /api/admin/machines — จัดการเครื่อง (ข้อมูลเต็ม)
 app.get('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('machines')
-      .select('*')
-      .order('id');
-    if (error) throw error;
-    res.json({ machines: data });
+    const [machinesRes, settings] = await Promise.all([
+      supabase.from('machines').select('*').order('id'),
+      getSettings()
+    ]);
+
+    if (machinesRes.error) throw machinesRes.error;
+
+    const machines = machinesRes.data.map(m => ({
+      ...m,
+      is_power_out: settings[`outage_machine_${m.id}`] === 'true'
+    }));
+
+    res.json({ machines });
   } catch (err) {
     res.status(500).json({ error: 'เกิดข้อผิดพลาด' });
   }
@@ -1385,16 +1422,201 @@ app.get('/api/admin/topups', authMiddleware, adminMiddleware, async (req, res) =
 // GET /api/admin/users — ดึงรายชื่อผู้ใช้ทั้งหมด
 app.get('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('id, username, credit, role, created_at')
-      .order('created_at', { ascending: false });
+    const [usersRes, machinesRes, settings] = await Promise.all([
+      supabase
+        .from('users')
+        .select('id, username, credit, role, created_at')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('machines')
+        .select('id, name, current_user_id, session_end_time')
+        .eq('status', 'in_use'),
+      getSettings()
+    ]);
 
-    if (error) throw error;
-    res.json({ users: data });
+    if (usersRes.error) throw usersRes.error;
+
+    const users = usersRes.data.map(u => {
+      const activeMachine = machinesRes.data?.find(m => m.current_user_id === u.id);
+      return {
+        ...u,
+        active_machine: activeMachine ? {
+          id: activeMachine.id,
+          name: activeMachine.name,
+          session_end_time: activeMachine.session_end_time,
+          is_power_out: settings[`outage_machine_${activeMachine.id}`] === 'true'
+        } : null
+      };
+    });
+
+    res.json({ users });
   } catch (err) {
     console.error('Get admin users error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลผู้ใช้' });
+  }
+});
+
+// POST /api/admin/users/:id/extend-session — เพิ่มเวลาเช่าเครื่องให้ผู้ใช้งานแบบแมนนวล (ชั่วโมง/นาที)
+app.post('/api/admin/users/:id/extend-session', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { duration, unit } = req.body; // duration: number, unit: 'minutes' | 'hours'
+
+    const numericDuration = parseFloat(duration);
+    if (isNaN(numericDuration) || numericDuration <= 0) {
+      return res.status(400).json({ error: 'จำนวนเวลาต้องเป็นตัวเลขที่มากกว่า 0' });
+    }
+
+    if (!['minutes', 'hours'].includes(unit)) {
+      return res.status(400).json({ error: 'หน่วยเวลาไม่ถูกต้อง (minutes หรือ hours)' });
+    }
+
+    const durationMs = unit === 'hours' 
+      ? numericDuration * 60 * 60 * 1000 
+      : numericDuration * 60 * 1000;
+
+    const durationHours = unit === 'hours' 
+      ? numericDuration 
+      : numericDuration / 60;
+
+    // ดึงเครื่องที่ผู้ใช้กำลังใช้งานอยู่
+    const { data: machine, error: machErr } = await supabase
+      .from('machines')
+      .select('*')
+      .eq('current_user_id', id)
+      .eq('status', 'in_use')
+      .single();
+
+    if (machErr || !machine) {
+      return res.status(404).json({ error: 'ผู้ใช้งานนี้ไม่มีเซสชันเช่าเครื่องที่กำลังใช้งานอยู่' });
+    }
+
+    const baseTime = machine.session_end_time ? new Date(machine.session_end_time) : new Date();
+    const newSessionEnd = new Date(baseTime.getTime() + durationMs);
+
+    // อัปเดตเวลาเครื่อง
+    const { error: machUpdate } = await supabase
+      .from('machines')
+      .update({ session_end_time: newSessionEnd.toISOString() })
+      .eq('id', machine.id);
+
+    if (machUpdate) throw machUpdate;
+
+    // อัปเดต rentals record
+    const { data: activeRental } = await supabase
+      .from('rentals')
+      .select('*')
+      .eq('user_id', id)
+      .eq('machine_id', machine.id)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (activeRental) {
+      const { error: rentalErr } = await supabase
+        .from('rentals')
+        .update({
+          duration_hours: Math.round(parseFloat(activeRental.duration_hours) + durationHours),
+          ended_at: newSessionEnd.toISOString()
+        })
+        .eq('id', activeRental.id);
+      if (rentalErr) throw rentalErr;
+    }
+
+    const unitLabel = unit === 'hours' ? 'ชั่วโมง' : 'นาที';
+    res.json({
+      success: true,
+      message: `เพิ่มเวลาเช่าเครื่อง ${machine.name} ให้ผู้ใช้สำเร็จ ${numericDuration} ${unitLabel}`,
+      new_session_end: newSessionEnd.toISOString()
+    });
+  } catch (err) {
+    console.error('Admin extend session error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการเพิ่มเวลาเช่าเครื่อง' });
+  }
+});
+
+// POST /api/admin/machines/:id/power-outage — จัดการสถานะไฟดับของเครื่อง (Activate/Deactivate)
+app.post('/api/admin/machines/:id/power-outage', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const machineId = parseInt(req.params.id);
+    const { action } = req.body; // 'activate' | 'deactivate'
+
+    if (!['activate', 'deactivate'].includes(action)) {
+      return res.status(400).json({ error: 'action ต้องเป็น activate หรือ deactivate' });
+    }
+
+    const { data: machine, error: machErr } = await supabase
+      .from('machines')
+      .select('*')
+      .eq('id', machineId)
+      .single();
+
+    if (machErr || !machine) {
+      return res.status(404).json({ error: 'ไม่พบเครื่องคอมพิวเตอร์นี้ในระบบ' });
+    }
+
+    const settings = await getSettings();
+    const keyOutage = `outage_machine_${machineId}`;
+    const keyStart = `outage_start_machine_${machineId}`;
+    const isCurrentlyOut = settings[keyOutage] === 'true';
+
+    if (action === 'activate') {
+      if (isCurrentlyOut) {
+        return res.status(400).json({ error: 'เครื่องนี้อยู่ในสถานะไฟดับอยู่แล้ว' });
+      }
+
+      settings[keyOutage] = 'true';
+      settings[keyStart] = new Date().toISOString();
+      await updateSettings(settings);
+
+      return res.json({ success: true, message: `เปิดใช้งานสถานะไฟดับสำหรับเครื่อง ${machine.name} สำเร็จ` });
+    } else {
+      if (!isCurrentlyOut) {
+        return res.status(400).json({ error: 'เครื่องนี้ไม่ได้อยู่ในสถานะไฟดับ' });
+      }
+
+      const startTimeStr = settings[keyStart];
+      const now = new Date();
+      const outageDurationMs = startTimeStr ? (now.getTime() - new Date(startTimeStr).getTime()) : 0;
+
+      if (machine.status === 'in_use' && outageDurationMs > 0) {
+        const baseTime = machine.session_end_time ? new Date(machine.session_end_time) : new Date();
+        const newSessionEnd = new Date(baseTime.getTime() + outageDurationMs);
+
+        // อัปเดตเวลาเครื่อง
+        await supabase
+          .from('machines')
+          .update({ session_end_time: newSessionEnd.toISOString() })
+          .eq('id', machineId);
+
+        // อัปเดต rentals record
+        const { data: activeRental } = await supabase
+          .from('rentals')
+          .select('*')
+          .eq('machine_id', machineId)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (activeRental) {
+          await supabase
+            .from('rentals')
+            .update({ ended_at: newSessionEnd.toISOString() })
+            .eq('id', activeRental.id);
+        }
+      }
+
+      settings[keyOutage] = 'false';
+      delete settings[keyStart];
+      await updateSettings(settings);
+
+      return res.json({ success: true, message: `ยกเลิกสถานะไฟดับสำหรับเครื่อง ${machine.name} สำเร็จ` });
+    }
+  } catch (err) {
+    console.error('Machine power outage toggle error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการจัดการสถานะไฟดับ' });
   }
 });
 
@@ -1509,7 +1731,13 @@ async function autoReleaseExpiredMachines() {
       .lt('session_end_time', now);
 
     if (expired && expired.length > 0) {
+      const settings = await getSettings();
       for (const machine of expired) {
+        if (settings[`outage_machine_${machine.id}`] === 'true') {
+          // Skip releasing machines in outage mode
+          continue;
+        }
+
         // ปิดเครื่องคอมพิวเตอร์อัตโนมัติ (Tuya Smart Plug/Switch)
         if (machine.tuya_device_id && TUYA_CLIENT_ID && TUYA_CLIENT_SECRET) {
           try {

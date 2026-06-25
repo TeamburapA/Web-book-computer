@@ -7,7 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
-      theme: { extend: { fontFamily: { prompt: ['Prompt','sans-serif'] }, colors: { neon: { yellow: '#facc15', pink: '#ec4899' }, cyber: { dark: '#0a0a0f', card: '#12121a', surface: '#1a1a2e', border: '#2a2a3e' } } } }
+      theme: { extend: { fontFamily: { prompt: ['Prompt','sans-serif'] }, colors: { neon: { yellow: '#facc15', pink: '#ec4899' }, cyber: { dark: '#07070a', card: '#0e0e13', surface: '#121218', border: '#1f1f27' } } } }
     }
   </script>
   <link rel="stylesheet" href="/css/style.css">
@@ -261,6 +261,35 @@
         <div class="flex gap-3 pt-2">
           <button type="button" onclick="hideModal('userCreditModal')" class="btn-outline flex-1">ยกเลิก</button>
           <button type="submit" class="btn-neon flex-1" id="userCreditSubmitBtn">💾 ยืนยัน</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ADD USER TIME MODAL -->
+  <div id="userTimeModal" class="modal-overlay">
+    <div class="modal-content !max-w-md">
+      <h3 class="text-xl font-bold text-white mb-4">⏰ เพิ่มเวลาเช่าเครื่อง</h3>
+      <div class="mb-4 text-sm bg-white/5 p-3 rounded border border-white/10 text-gray-300">
+        <p class="flex justify-between"><span>ผู้ใช้:</span> <span id="ut_username" class="text-pink-400 font-semibold"></span></p>
+        <p class="flex justify-between mt-1"><span>เครื่องที่เช่า:</span> <span id="ut_machinename" class="text-cyan-400 font-bold"></span></p>
+        <p class="flex justify-between mt-1"><span>เวลาหมดเซสชันเดิม:</span> <span id="ut_current_end" class="text-gray-400"></span></p>
+      </div>
+      <form id="userTimeForm" class="space-y-4">
+        <input type="hidden" id="ut_user_id">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">จำนวนเวลาที่ต้องการเพิ่ม *</label>
+          <div class="flex gap-2">
+            <input id="ut_duration" type="number" step="any" min="0.1" class="cyber-input flex-1" placeholder="ระบุจำนวนเวลา" required>
+            <select id="ut_unit" class="cyber-input w-32" required>
+              <option value="minutes">นาที</option>
+              <option value="hours" selected>ชั่วโมง</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex gap-3 pt-2">
+          <button type="button" onclick="hideModal('userTimeModal')" class="btn-outline flex-1">ยกเลิก</button>
+          <button type="submit" class="btn-neon flex-1" id="userTimeSubmitBtn">💾 ยืนยันเพิ่มเวลา</button>
         </div>
       </form>
     </div>

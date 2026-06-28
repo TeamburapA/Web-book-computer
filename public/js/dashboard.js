@@ -464,11 +464,54 @@ function openExtendModal(machineId) {
   document.getElementById('extendMachineName').textContent = `➕ ต่อเวลาเช่าเครื่อง ${machine.name}`;
   document.getElementById('extendMachineSpec').textContent = `${machine.cpu || ''} • ${machine.ram || ''} • ${machine.gpu || ''}`;
 
-  // Reset inputs
-  currentExtendUnit = 'day';
+  // Reset inputs and adjust pricing options based on machine allowance
+  const btnDay = document.getElementById('ext-unit-day');
+  const btnWeek = document.getElementById('ext-unit-week');
+  const btnMonth = document.getElementById('ext-unit-month');
+
+  if (machine.allow_daily !== false) {
+    btnDay.classList.remove('hidden');
+  } else {
+    btnDay.classList.add('hidden');
+  }
+
+  if (machine.allow_weekly !== false) {
+    btnWeek.classList.remove('hidden');
+  } else {
+    btnWeek.classList.add('hidden');
+  }
+
+  if (machine.allow_monthly !== false) {
+    btnMonth.classList.remove('hidden');
+  } else {
+    btnMonth.classList.add('hidden');
+  }
+
+  const allowedCount = [machine.allow_daily !== false, machine.allow_weekly !== false, machine.allow_monthly !== false].filter(Boolean).length;
+  const parentContainer = btnDay.parentElement;
+  if (parentContainer) {
+    parentContainer.className = `grid gap-2 bg-cyber-dark p-1 rounded-lg border border-cyber-border grid-cols-${allowedCount || 1}`;
+  }
+
+  if (machine.allow_daily !== false) {
+    currentExtendUnit = 'day';
+  } else if (machine.allow_weekly !== false) {
+    currentExtendUnit = 'week';
+  } else if (machine.allow_monthly !== false) {
+    currentExtendUnit = 'month';
+  } else {
+    currentExtendUnit = 'day';
+  }
+
   currentExtendQuantity = 1;
   document.getElementById('extendQuantity').value = 1;
-  document.getElementById('extendQuantityUnitLabel').textContent = 'วัน';
+
+  const labelMap = {
+    'day': 'วัน',
+    'week': 'สัปดาห์',
+    'month': 'เดือน'
+  };
+  document.getElementById('extendQuantityUnitLabel').textContent = labelMap[currentExtendUnit] || 'วัน';
   updateExtendUnitButtonsHighlight();
 
   // User credit
@@ -482,6 +525,13 @@ function openExtendModal(machineId) {
 }
 
 function selectExtendUnit(unit) {
+  const machine = activeMachines.find(m => m.id === selectedExtendMachineId);
+  if (!machine) return;
+
+  if (unit === 'day' && machine.allow_daily === false) return;
+  if (unit === 'week' && machine.allow_weekly === false) return;
+  if (unit === 'month' && machine.allow_monthly === false) return;
+
   currentExtendUnit = unit;
   
   const labelMap = {
@@ -492,8 +542,6 @@ function selectExtendUnit(unit) {
   document.getElementById('extendQuantityUnitLabel').textContent = labelMap[unit] || 'วัน';
   
   updateExtendUnitButtonsHighlight();
-  
-  const machine = activeMachines.find(m => m.id === selectedExtendMachineId);
   updateExtendCalculation(machine);
 }
 

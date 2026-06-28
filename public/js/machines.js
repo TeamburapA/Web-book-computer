@@ -100,13 +100,30 @@ function renderMachines(machines) {
             </div>
           </div>
 
+          ${m.test_result ? `
+            <div class="my-3 text-xs bg-yellow-400/5 border border-yellow-400/10 p-2.5 rounded text-gray-400">
+              <span class="block font-bold text-[#facc15] mb-1">📋 ผลการทดสอบ:</span>
+              <span class="whitespace-pre-line">${m.test_result}</span>
+            </div>
+          ` : ''}
+
           <!-- Price -->
           <div class="flex items-center justify-between py-3 border-t border-[#1f1f27]">
             <div class="flex flex-col">
               <span class="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">ราคาเช่า</span>
               <div class="flex items-baseline gap-0.5 mt-0.5">
-                <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_day).split('.')[0]}</span>
-                <span class="text-zinc-500 text-xs font-semibold">/วัน</span>
+                ${m.allow_daily !== false ? `
+                  <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_day).split('.')[0]}</span>
+                  <span class="text-zinc-500 text-xs font-semibold">/วัน</span>
+                ` : m.allow_weekly !== false ? `
+                  <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_week > 0 ? m.price_per_week : parseFloat(m.price_per_day) * 7).split('.')[0]}</span>
+                  <span class="text-zinc-500 text-xs font-semibold">/สัปดาห์</span>
+                ` : m.allow_monthly !== false ? `
+                  <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_month > 0 ? m.price_per_month : parseFloat(m.price_per_day) * 30).split('.')[0]}</span>
+                  <span class="text-zinc-500 text-xs font-semibold">/เดือน</span>
+                ` : `
+                  <span class="text-sm font-bold text-gray-500">ไม่ได้เปิดเช่า</span>
+                `}
               </div>
             </div>
           </div>
@@ -206,11 +223,54 @@ function openRentalModal(machineId) {
   document.getElementById('rentalMachineName').textContent = `⚡ เช่าเครื่อง ${machine.name}`;
   document.getElementById('rentalMachineSpec').textContent = `${machine.cpu} • ${machine.ram} • ${machine.gpu}`;
 
-  // Reset inputs
-  currentRentUnit = 'day';
+  // Reset inputs and adjust pricing options based on machine allowance
+  const btnDay = document.getElementById('unit-day');
+  const btnWeek = document.getElementById('unit-week');
+  const btnMonth = document.getElementById('unit-month');
+
+  if (machine.allow_daily !== false) {
+    btnDay.classList.remove('hidden');
+  } else {
+    btnDay.classList.add('hidden');
+  }
+
+  if (machine.allow_weekly !== false) {
+    btnWeek.classList.remove('hidden');
+  } else {
+    btnWeek.classList.add('hidden');
+  }
+
+  if (machine.allow_monthly !== false) {
+    btnMonth.classList.remove('hidden');
+  } else {
+    btnMonth.classList.add('hidden');
+  }
+
+  const allowedCount = [machine.allow_daily !== false, machine.allow_weekly !== false, machine.allow_monthly !== false].filter(Boolean).length;
+  const parentContainer = btnDay.parentElement;
+  if (parentContainer) {
+    parentContainer.className = `grid gap-2 bg-cyber-dark p-1 rounded-lg border border-cyber-border grid-cols-${allowedCount || 1}`;
+  }
+
+  if (machine.allow_daily !== false) {
+    currentRentUnit = 'day';
+  } else if (machine.allow_weekly !== false) {
+    currentRentUnit = 'week';
+  } else if (machine.allow_monthly !== false) {
+    currentRentUnit = 'month';
+  } else {
+    currentRentUnit = 'day';
+  }
+
   currentRentQuantity = 1;
   document.getElementById('rentQuantity').value = 1;
-  document.getElementById('quantityUnitLabel').textContent = 'วัน';
+
+  const labelMap = {
+    'day': 'วัน',
+    'week': 'สัปดาห์',
+    'month': 'เดือน'
+  };
+  document.getElementById('quantityUnitLabel').textContent = labelMap[currentRentUnit] || 'วัน';
   updateUnitButtonsHighlight();
 
   // Reset rules checkbox
@@ -238,6 +298,13 @@ function calculatePrice(machine, hours) {
 
 // --- เปลี่ยนหน่วยเวลาเช่า ---
 function selectRentUnit(unit) {
+  const machine = allMachines.find(m => m.id === selectedMachineId);
+  if (!machine) return;
+
+  if (unit === 'day' && machine.allow_daily === false) return;
+  if (unit === 'week' && machine.allow_weekly === false) return;
+  if (unit === 'month' && machine.allow_monthly === false) return;
+
   currentRentUnit = unit;
   
   const labelMap = {
@@ -248,8 +315,6 @@ function selectRentUnit(unit) {
   document.getElementById('quantityUnitLabel').textContent = labelMap[unit] || 'วัน';
   
   updateUnitButtonsHighlight();
-  
-  const machine = allMachines.find(m => m.id === selectedMachineId);
   updateRentCalculation(machine);
 }
 
@@ -474,11 +539,54 @@ function openExtendModal(machineId) {
   document.getElementById('extendMachineName').textContent = `➕ ต่อเวลาเช่าเครื่อง ${machine.name}`;
   document.getElementById('extendMachineSpec').textContent = `${machine.cpu || ''} • ${machine.ram || ''} • ${machine.gpu || ''}`;
 
-  // Reset inputs
-  currentExtendUnit = 'day';
+  // Reset inputs and adjust pricing options based on machine allowance
+  const btnDay = document.getElementById('ext-unit-day');
+  const btnWeek = document.getElementById('ext-unit-week');
+  const btnMonth = document.getElementById('ext-unit-month');
+
+  if (machine.allow_daily !== false) {
+    btnDay.classList.remove('hidden');
+  } else {
+    btnDay.classList.add('hidden');
+  }
+
+  if (machine.allow_weekly !== false) {
+    btnWeek.classList.remove('hidden');
+  } else {
+    btnWeek.classList.add('hidden');
+  }
+
+  if (machine.allow_monthly !== false) {
+    btnMonth.classList.remove('hidden');
+  } else {
+    btnMonth.classList.add('hidden');
+  }
+
+  const allowedCount = [machine.allow_daily !== false, machine.allow_weekly !== false, machine.allow_monthly !== false].filter(Boolean).length;
+  const parentContainer = btnDay.parentElement;
+  if (parentContainer) {
+    parentContainer.className = `grid gap-2 bg-cyber-dark p-1 rounded-lg border border-cyber-border grid-cols-${allowedCount || 1}`;
+  }
+
+  if (machine.allow_daily !== false) {
+    currentExtendUnit = 'day';
+  } else if (machine.allow_weekly !== false) {
+    currentExtendUnit = 'week';
+  } else if (machine.allow_monthly !== false) {
+    currentExtendUnit = 'month';
+  } else {
+    currentExtendUnit = 'day';
+  }
+
   currentExtendQuantity = 1;
   document.getElementById('extendQuantity').value = 1;
-  document.getElementById('extendQuantityUnitLabel').textContent = 'วัน';
+
+  const labelMap = {
+    'day': 'วัน',
+    'week': 'สัปดาห์',
+    'month': 'เดือน'
+  };
+  document.getElementById('extendQuantityUnitLabel').textContent = labelMap[currentExtendUnit] || 'วัน';
   updateExtendUnitButtonsHighlight();
 
   // User credit
@@ -492,6 +600,13 @@ function openExtendModal(machineId) {
 }
 
 function selectExtendUnit(unit) {
+  const machine = allMachines.find(m => m.id === selectedExtendMachineId);
+  if (!machine) return;
+
+  if (unit === 'day' && machine.allow_daily === false) return;
+  if (unit === 'week' && machine.allow_weekly === false) return;
+  if (unit === 'month' && machine.allow_monthly === false) return;
+
   currentExtendUnit = unit;
   
   const labelMap = {
@@ -502,8 +617,6 @@ function selectExtendUnit(unit) {
   document.getElementById('extendQuantityUnitLabel').textContent = labelMap[unit] || 'วัน';
   
   updateExtendUnitButtonsHighlight();
-  
-  const machine = allMachines.find(m => m.id === selectedExtendMachineId);
   updateExtendCalculation(machine);
 }
 

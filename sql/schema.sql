@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS machines (
   anydesk_password TEXT,   -- รหัสผ่าน AnyDesk ของเครื่อง
   tuya_device_id TEXT,     -- Device ID จาก Tuya Smart สำหรับเปิด/ปิดเครื่อง
   image_url TEXT,
+  allow_daily BOOLEAN DEFAULT TRUE,
+  allow_weekly BOOLEAN DEFAULT TRUE,
+  allow_monthly BOOLEAN DEFAULT TRUE,
+  test_result TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -50,6 +54,10 @@ CREATE INDEX idx_machines_current_user ON machines(current_user_id);
 -- ALTER TABLE machines ADD COLUMN IF NOT EXISTS anydesk_id TEXT;
 -- ALTER TABLE machines ADD COLUMN IF NOT EXISTS anydesk_password TEXT;
 -- ALTER TABLE machines ADD COLUMN IF NOT EXISTS tuya_device_id TEXT;
+-- ALTER TABLE machines ADD COLUMN IF NOT EXISTS allow_daily BOOLEAN DEFAULT TRUE;
+-- ALTER TABLE machines ADD COLUMN IF NOT EXISTS allow_weekly BOOLEAN DEFAULT TRUE;
+-- ALTER TABLE machines ADD COLUMN IF NOT EXISTS allow_monthly BOOLEAN DEFAULT TRUE;
+-- ALTER TABLE machines ADD COLUMN IF NOT EXISTS test_result TEXT;
 
 -- 3. ตาราง Rentals (ประวัติการเช่า)
 CREATE TABLE IF NOT EXISTS rentals (

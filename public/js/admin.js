@@ -177,6 +177,10 @@ function showAddMachineModal() {
   document.getElementById('machineFormSubmitBtn').textContent = '💾 เพิ่มเครื่อง';
   document.getElementById('machineForm').reset();
   document.getElementById('mf_id').value = '';
+  document.getElementById('mf_allow_daily').checked = true;
+  document.getElementById('mf_allow_weekly').checked = true;
+  document.getElementById('mf_allow_monthly').checked = true;
+  document.getElementById('mf_test_result').value = '';
   showModal('machineFormModal');
 }
 
@@ -203,6 +207,10 @@ async function editMachine(id) {
   document.getElementById('mf_anydesk_pass').value = m.anydesk_password || '';
   document.getElementById('mf_tuya_id').value = m.tuya_device_id || '';
   document.getElementById('mf_image').value = m.image_url || '';
+  document.getElementById('mf_allow_daily').checked = m.allow_daily !== false;
+  document.getElementById('mf_allow_weekly').checked = m.allow_weekly !== false;
+  document.getElementById('mf_allow_monthly').checked = m.allow_monthly !== false;
+  document.getElementById('mf_test_result').value = m.test_result || '';
   showModal('machineFormModal');
 }
 
@@ -232,7 +240,11 @@ function setupMachineForm() {
       anydesk_id: document.getElementById('mf_anydesk_id').value,
       anydesk_password: document.getElementById('mf_anydesk_pass').value,
       tuya_device_id: document.getElementById('mf_tuya_id').value,
-      image_url: document.getElementById('mf_image').value
+      image_url: document.getElementById('mf_image').value,
+      allow_daily: document.getElementById('mf_allow_daily').checked,
+      allow_weekly: document.getElementById('mf_allow_weekly').checked,
+      allow_monthly: document.getElementById('mf_allow_monthly').checked,
+      test_result: document.getElementById('mf_test_result').value
     };
 
     try {

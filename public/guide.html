@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>วิธีการใช้งาน—ChickDDC</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { 
+        extend: { 
+          fontFamily: { prompt: ['Prompt','sans-serif'] }, 
+          colors: { 
+            neon: { yellow: '#facc15', pink: '#ec4899' }, 
+            cyber: { dark: '#07070a', card: '#0e0e13', surface: '#121218', border: '#1f1f27' } 
+          } 
+        } 
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="font-prompt text-gray-300 grid-pattern min-h-screen flex flex-col">
+
+  <!-- NAVBAR -->
+  <nav class="nav-glass sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="flex items-center justify-between h-16">
+        <a href="/" class="flex items-center gap-2">
+          <span class="text-2xl">🖥️</span>
+          <span class="text-xl font-bold gradient-text">ChickDDC</span>
+        </a>
+        <div class="hidden md:flex items-center gap-6">
+          <a href="/" class="text-gray-400 text-sm hover:text-yellow-400 transition">หน้าหลัก</a>
+          <a href="/topup.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">เติมเงิน</a>
+          <a href="/dashboard.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">แดชบอร์ด</a>
+          <a href="/rules.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">กฎการใช้งาน</a>
+          <a href="/guide.html" class="text-yellow-400 font-medium text-sm">วิธีการใช้งาน</a>
+          <button onclick="showModal('contactModal')" class="text-gray-400 text-sm hover:text-yellow-400 transition">ติดต่อเรา</button>
+        </div>
+        <div class="hidden md:flex items-center gap-3">
+          <div id="authButtons" class="flex gap-2">
+            <button onclick="window.location.href='/'" class="btn-outline text-sm !py-2 !px-4">กลับหน้าหลัก</button>
+          </div>
+          <div id="userInfo" class="hidden"></div>
+        </div>
+        <button onclick="document.getElementById('mobileMenu').classList.toggle('hidden')" class="md:hidden text-gray-400">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="mobileMenu" class="md:hidden hidden border-t border-white/5 bg-cyber-dark/95 backdrop-blur px-4 py-4 space-y-2">
+      <a href="/" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">🏠 หน้าหลัก</a>
+      <a href="/topup.html" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">💰 เติมเงิน</a>
+      <a href="/dashboard.html" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">📊 แดชบอร์ด</a>
+      <a href="/rules.html" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">📜 กฎการใช้งาน</a>
+      <a href="/guide.html" class="block px-3 py-2 rounded-lg text-yellow-400 bg-yellow-400/5 text-sm">💡 วิธีการใช้งาน</a>
+      <button onclick="showModal('contactModal')" class="w-full text-left block px-3 py-2 rounded-lg text-gray-400 hover:text-white text-sm">💬 ติดต่อเรา</button>
+    </div>
+  </nav>
+
+  <!-- CONTENT -->
+  <main class="flex-1 max-w-4xl mx-auto px-4 sm:px-6 py-10 w-full">
+    <h1 class="text-3xl font-bold text-white mb-2 flex items-center gap-2">
+      <span>💡</span> วิธีการใช้งานระบบ ChickDDC
+    </h1>
+    <p class="text-gray-500 text-sm mb-8">แนะนำขั้นตอนอย่างละเอียดตั้งแต่สมัครสมาชิก เติมเงิน ไปจนถึงเข้าใช้งานคอมพิวเตอร์ผ่าน AnyDesk</p>
+
+    <!-- STEP TIMELINE -->
+    <div class="space-y-8 relative before:absolute before:inset-0 before:left-8 before:w-0.5 before:bg-white/5">
+
+      <!-- Step 1 -->
+      <div class="flex gap-6 relative">
+        <div class="w-16 h-16 rounded-full bg-yellow-400/10 border border-yellow-400/30 flex items-center justify-center text-2xl font-bold text-yellow-400 flex-shrink-0 z-10">
+          1
+        </div>
+        <div class="cyber-card p-6 flex-1">
+          <h2 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+            👤 สมัครสมาชิก & เข้าสู่ระบบ
+          </h2>
+          <p class="text-sm text-gray-400 leading-relaxed mb-3">
+            ขั้นตอนแรกในการใช้งาน คุณจำเป็นต้องสร้างบัญชีส่วนตัวเพื่อใช้เก็บยอดเครดิตและจัดการเครื่องคอมพิวเตอร์ของคุณ
+          </p>
+          <ul class="list-disc list-inside text-xs text-gray-500 space-y-1">
+            <li>กดปุ่ม <span class="text-yellow-400">"เข้าสู่ระบบ / สมัครสมาชิก"</span> บริเวณมุมขวาบนของหน้าเว็บ</li>
+            <li>หากยังไม่มีบัญชี ให้เลือกแท็บ <span class="text-yellow-400">"สมัครสมาชิก"</span> เพื่อตั้งค่า Username และ Password</li>
+            <li>เข้าสู่ระบบด้วยบัญชีที่สมัครไว้</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="flex gap-6 relative">
+        <div class="w-16 h-16 rounded-full bg-yellow-400/10 border border-yellow-400/30 flex items-center justify-center text-2xl font-bold text-yellow-400 flex-shrink-0 z-10">
+          2
+        </div>
+        <div class="cyber-card p-6 flex-1">
+          <h2 class="text-lg font-bold text-white mb-3 flex items-center gap-2">
+            💰 เติมเครดิตเข้าระบบ
+          </h2>
+          <p class="text-sm text-gray-400 leading-relaxed mb-4">
+            ระบบของเราทำงานอัตโนมัติ คุณจำเป็นต้องเติมเครดิตให้เพียงพอกับราคาเช่าของเครื่องคอมพิวเตอร์ที่คุณต้องการ โดยมี 2 วิธีหลักดังนี้:
+          </p>
+
+          <div class="grid md:grid-cols-2 gap-4">
+            <!-- Bank/PromptPay -->
+            <div class="bg-white/5 border border-white/5 rounded-xl p-4">
+              <h3 class="text-sm font-bold text-yellow-400 mb-2 flex items-center gap-1.5">
+                <span>💳</span> โอนผ่าน PromptPay (แนะนำ)
+              </h3>
+              <ol class="list-decimal list-inside text-xs text-gray-400 space-y-2 leading-relaxed">
+                <li>ไปที่หน้าเมนู <span class="text-white font-semibold">"เติมเงิน"</span></li>
+                <li>สแกน QR Code หรือโอนเงินไปยังเลขที่บัญชีที่แสดง</li>
+                <li>บันทึกภาพ <span class="text-white font-semibold">สลิปโอนเงิน (Receipt Slip)</span> ลงในเครื่อง</li>
+                <li>อัปโหลดสลิปเข้าไปในระบบ แล้วกดปุ่ม <span class="text-yellow-400 font-semibold">"ส่งสลิปตรวจสอบ"</span> เพื่อรับเครดิตอัตโนมัติทันที</li>
+              </ol>
+            </div>
+
+            <!-- TrueMoney Gift -->
+            <div class="bg-white/5 border border-white/5 rounded-xl p-4">
+              <h3 class="text-sm font-bold text-pink-400 mb-2 flex items-center gap-1.5">
+                <span>🧧</span> ซองของขวัญ TrueMoney
+              </h3>
+              <ol class="list-decimal list-inside text-xs text-gray-400 space-y-2 leading-relaxed">
+                <li>เปิดแอป TrueMoney Wallet และเลือกส่ง <span class="text-white font-semibold">"ส่งซองของขวัญ"</span></li>
+                <li>ตั้งค่าประเภทซองเป็น <span class="text-pink-400 font-semibold">"แบ่งจ่ายแบบเท่ากัน"</span></li>
+                <li>ระบุผู้รับซองเป็น <span class="text-pink-400 font-semibold">1 คน</span> เท่านั้น (สำคัญมากเพื่อให้เงินเข้าเต็มจำนวน)</li>
+                <li>คัดลอกลิงก์ซองของขวัญ นำมาวางในช่องบนหน้าเว็บและกดยืนยันเพื่อรับเครดิตทันที</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="flex gap-6 relative">
+        <div class="w-16 h-16 rounded-full bg-yellow-400/10 border border-yellow-400/30 flex items-center justify-center text-2xl font-bold text-yellow-400 flex-shrink-0 z-10">
+          3
+        </div>
+        <div class="cyber-card p-6 flex-1">
+          <h2 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+            🖥️ เลือกเครื่องคอมพิวเตอร์ & เช่าเครื่อง
+          </h2>
+          <p class="text-sm text-gray-400 leading-relaxed mb-3">
+            เมื่อมีเครดิตเพียงพอแล้ว คุณสามารถเลือกเช่าเครื่องคอมพิวเตอร์ที่ระบบมีให้บริการได้ทันที
+          </p>
+          <ul class="list-disc list-inside text-xs text-gray-500 space-y-2">
+            <li>กลับมาที่ <span class="text-white font-medium">"หน้าหลัก"</span> และเลื่อนไปที่รายการเครื่องคอมพิวเตอร์</li>
+            <li>อ่านสเปก (CPU, RAM, GPU, OS) รวมถึงผลการทดสอบการใช้งาน (Test Result) ของเครื่องเพื่อประกอบการตัดสินใจ</li>
+            <li>คลิกปุ่ม <span class="text-yellow-400">"เช่าเครื่องนี้"</span></li>
+            <li>เลือกเวลาที่ต้องการเช่า (วัน/สัปดาห์/เดือน) อ่านและติ๊กยอมรับกฎการใช้งาน แล้วกด <span class="text-yellow-400 font-semibold">"ยืนยันการเช่า"</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="flex gap-6 relative">
+        <div class="w-16 h-16 rounded-full bg-yellow-400/10 border border-yellow-400/30 flex items-center justify-center text-2xl font-bold text-yellow-400 flex-shrink-0 z-10">
+          4
+        </div>
+        <div class="cyber-card p-6 flex-1">
+          <h2 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+            🔑 รับข้อมูล AnyDesk เพื่อการเชื่อมต่อ
+          </h2>
+          <p class="text-sm text-gray-400 leading-relaxed mb-3">
+            หลังจากทำรายการเช่าสำเร็จ เครื่องคอมพิวเตอร์ของคุณจะย้ายไปอยู่ที่แดชบอร์ดส่วนตัว
+          </p>
+          <ul class="list-disc list-inside text-xs text-gray-500 space-y-1">
+            <li>ไปที่หน้าเมนู <span class="text-white">"แดชบอร์ด"</span></li>
+            <li>ภายใต้หัวข้อ <span class="text-yellow-400">"เครื่องที่กำลังเช่าอยู่"</span> คุณจะเห็นข้อมูลเครื่องคอมพิวเตอร์พร้อมเวลานับถอยหลัง</li>
+            <li>คลิกที่ปุ่ม <span class="text-white font-semibold">"แสดงข้อมูล AnyDesk"</span> เพื่อรับ **ID** และ **Password** ที่จะใช้เชื่อมต่อ</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Step 5 -->
+      <div class="flex gap-6 relative">
+        <div class="w-16 h-16 rounded-full bg-yellow-400/10 border border-yellow-400/30 flex items-center justify-center text-2xl font-bold text-yellow-400 flex-shrink-0 z-10">
+          5
+        </div>
+        <div class="cyber-card p-6 flex-1">
+          <h2 class="text-lg font-bold text-white mb-3 flex items-center gap-2">
+            🚀 ดาวน์โหลด AnyDesk & เชื่อมต่อใช้งานเครื่อง
+          </h2>
+          <p class="text-sm text-gray-400 leading-relaxed mb-4">
+            เชื่อมต่อเครื่องคอมพิวเตอร์คลาวด์จากระยะไกลด้วยโปรแกรม AnyDesk เพื่อสตรีมหน้าจอมายังคอมพิวเตอร์หรือสมาร์ทโฟนของคุณ
+          </p>
+
+          <div class="space-y-3 bg-[#050508] p-4 rounded-xl border border-white/5 text-xs text-gray-400 leading-relaxed">
+            <p>1. 📥 **ดาวน์โหลดโปรแกรม:** หากเครื่องของคุณยังไม่มี ให้เข้าไปที่เว็บไซต์ <a href="https://anydesk.com" target="_blank" class="text-yellow-400 hover:underline">anydesk.com</a> เพื่อดาวน์โหลดโปรแกรมลงเครื่อง (รองรับ Windows, macOS, Android, และ iOS)</p>
+            <p>2. 🔑 **เริ่มการเชื่อมต่อ:** เปิด AnyDesk ขึ้นมา นำ **AnyDesk ID** ที่ได้จากแดชบอร์ดไปป้อนในช่องค้นหาหรือ "Remote Address" แล้วกดเชื่อมต่อ</p>
+            <p>3. 🛡️ **ใส่รหัสผ่าน:** เมื่อโปรแกรมถามหา Password ให้นำ **Password** จากแดชบอร์ดมาป้อนเพื่อยืนยันสิทธิ์เข้าใช้</p>
+            <p>4. 🎉 **เริ่มใช้งานได้เลย:** หน้าจอคอมพิวเตอร์เช่าสเปกแรงสูงจะแสดงขึ้นมา คุณสามารถเปิดเกม ติดตั้งโปรแกรม หรือทำกิจกรรมที่คุณต้องการได้ทันที!</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 6 -->
+      <div class="flex gap-6 relative">
+        <div class="w-16 h-16 rounded-full bg-yellow-400/10 border border-yellow-400/30 flex items-center justify-center text-2xl font-bold text-yellow-400 flex-shrink-0 z-10">
+          6
+        </div>
+        <div class="cyber-card p-6 flex-1">
+          <h2 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+            ⏰ การต่อเวลาเช่า & การคืนเครื่อง
+          </h2>
+          <p class="text-sm text-gray-400 leading-relaxed mb-3">
+            จัดการเวลาการเช่าของคุณได้ตามความเหมาะสม
+          </p>
+          <ul class="list-disc list-inside text-xs text-gray-500 space-y-2">
+            <li><strong class="text-yellow-400">การต่อเวลา:</strong> หากต้องการใช้เครื่องต่อก่อนหมดเวลา สามารถคลิกปุ่ม <span class="text-white">"ต่อเวลา"</span> ในแดชบอร์ด เพื่อเลือกเพิ่มเวลาเช่าได้ (กรุณาเติมเครดิตให้เพียงพอก่อน)</li>
+            <li><strong class="text-pink-400">การคืนเครื่องก่อนกำหนด:</strong> เมื่อไม่ต้องการใช้งานแล้ว สามารถคลิกปุ่ม <span class="text-white font-semibold">"คืนเครื่อง"</span> เพื่อปล่อยสิทธิ์ให้ผู้อื่น (คำเตือน: ข้อมูลและการดาวน์โหลดของท่านในเครื่องจะถูกเคลียร์เพื่อความปลอดภัยเมื่อเครื่องถูกคืน)</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- CTA & Back Home -->
+    <div class="text-center mt-12 bg-white/5 border border-white/5 rounded-2xl p-8 max-w-xl mx-auto">
+      <h3 class="text-white font-bold text-lg mb-2">เข้าใจวิธีใช้งานทั้งหมดแล้วใช่ไหม?</h3>
+      <p class="text-gray-400 text-xs mb-6">เริ่มสมัครสมาชิก เติมเครดิต และค้นหาคอมพิวเตอร์รุ่นที่ตรงใจคุณเพื่อเริ่มทำงานหรือเล่นเกมได้ทันที</p>
+      <div class="flex flex-col sm:flex-row justify-center gap-4">
+        <a href="/" class="btn-neon">🎮 ค้นหาคอมพิวเตอร์เพื่อเช่า</a>
+        <a href="/topup.html" class="btn-pink">💰 เติมเงินเลย</a>
+      </div>
+    </div>
+  </main>
+
+  <!-- ========== CONTACT MODAL ========== -->
+  <div id="contactModal" class="modal-overlay">
+    <div class="modal-content !max-w-md">
+      <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+        <span>💬</span> ช่องทางติดต่อแอดมิน
+      </h3>
+      <p class="text-gray-400 text-sm mb-6">หากพบปัญหาการใช้งาน หรือต้องการสอบถามข้อมูลเพิ่มเติม สามารถติดต่อเราได้ตลอด 24 ชั่วโมง</p>
+
+      <div class="space-y-4">
+        <!-- Facebook Fanpage -->
+        <a id="contact_facebook_link" href="https://facebook.com" target="_blank" class="flex items-center justify-between p-4 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-xl transition group">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl text-blue-400">🔵</span>
+            <div>
+              <p class="text-white font-bold text-sm">Facebook Fanpage</p>
+              <p class="text-gray-400 text-xs mt-0.5">ChickDDC บริการเช่าคอมออนไลน์</p>
+            </div>
+          </div>
+          <span class="text-blue-400 group-hover:translate-x-1 transition">👍 ส่งข้อความ &rarr;</span>
+        </a>
+
+        <!-- Discord Support -->
+        <a id="contact_discord_link" href="https://discord.com" target="_blank" class="flex items-center justify-between p-4 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 rounded-xl transition group">
+          <div class="flex items-center gap-3">
+            <span class="text-3xl text-purple-400">🟣</span>
+            <div>
+              <p class="text-white font-bold text-sm">Discord Community</p>
+              <p class="text-gray-400 text-xs mt-0.5">พูดคุย สอบถามปัญหากับแอดมินโดยตรง</p>
+            </div>
+          </div>
+          <span class="text-purple-400 group-hover:translate-x-1 transition">🎮 เข้าร่วม &rarr;</span>
+        </a>
+      </div>
+
+      <!-- Close Button -->
+      <div class="mt-6">
+        <button onclick="hideModal('contactModal')" class="btn-outline w-full py-2.5">ปิดหน้าต่าง</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="border-t border-white/5 mt-auto bg-cyber-dark/80">
+    <div class="max-w-7xl mx-auto px-4 py-6 text-center text-gray-600 text-xs">© 2025 ChickDDC</div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="/js/config.js"></script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/auth.js"></script>
+  <script>
+    // Contact Modal Toggle functions if anydesk / other libraries require them
+    function showModal(id) {
+      const modal = document.getElementById(id);
+      if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+      }
+    }
+    function hideModal(id) {
+      const modal = document.getElementById(id);
+      if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+      }
+    }
+  </script>
+</body>
+</html>

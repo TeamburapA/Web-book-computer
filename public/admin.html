@@ -177,18 +177,36 @@
             <input id="mf_os" class="cyber-input" placeholder="Windows 11 Pro">
           </div>
           <div>
-            <label class="block text-sm text-gray-400 mb-1">ราคา/วัน (฿) *</label>
+            <label class="flex items-center justify-between text-sm text-gray-400 mb-1">
+              <span>ราคา/วัน (฿) *</span>
+              <label class="inline-flex items-center cursor-pointer text-xs gap-1 text-yellow-400">
+                <input type="checkbox" id="mf_allow_daily" class="accent-yellow-400 rounded" checked>
+                <span>เปิดใช้งาน</span>
+              </label>
+            </label>
             <input id="mf_price_day" type="number" step="0.01" class="cyber-input" placeholder="400.00" required>
           </div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm text-gray-400 mb-1">ราคา/สัปดาห์ (฿)</label>
+            <label class="flex items-center justify-between text-sm text-gray-400 mb-1">
+              <span>ราคา/สัปดาห์ (฿)</span>
+              <label class="inline-flex items-center cursor-pointer text-xs gap-1 text-yellow-400">
+                <input type="checkbox" id="mf_allow_weekly" class="accent-yellow-400 rounded" checked>
+                <span>เปิดใช้งาน</span>
+              </label>
+            </label>
             <input id="mf_price_week" type="number" step="0.01" class="cyber-input" placeholder="เช่น 2500.00 (เว้นว่างไว้เพื่อใช้ 7 x ราคาต่อวัน)">
           </div>
           <div>
-            <label class="block text-sm text-gray-400 mb-1">ราคา/เดือน (฿)</label>
+            <label class="flex items-center justify-between text-sm text-gray-400 mb-1">
+              <span>ราคา/เดือน (฿)</span>
+              <label class="inline-flex items-center cursor-pointer text-xs gap-1 text-yellow-400">
+                <input type="checkbox" id="mf_allow_monthly" class="accent-yellow-400 rounded" checked>
+                <span>เปิดใช้งาน</span>
+              </label>
+            </label>
             <input id="mf_price_month" type="number" step="0.01" class="cyber-input" placeholder="เช่น 9000.00 (เว้นว่างไว้เพื่อใช้ 30 x ราคาต่อวัน)">
           </div>
           <input id="mf_price_hour" type="hidden" value="0">
@@ -218,6 +236,11 @@
           </div>
         </div>
 
+
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">ผลtest (รายละเอียดเครื่อง)</label>
+          <textarea id="mf_test_result" class="cyber-input h-24 resize-none" placeholder="เช่น เครื่องสภาพดี 100%, ผลเทส 3DMark 15000 คะแนน..."></textarea>
+        </div>
 
         <div>
           <label class="block text-sm text-gray-400 mb-1">URL รูปเครื่อง (ไม่บังคับ)</label>

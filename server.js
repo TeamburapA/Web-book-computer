@@ -1,7 +1,24 @@
 // =============================================
 // ระบบเช่าคอมพิวเตอร์ออนไลน์ — Express Backend
 // =============================================
-require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
+
+// --- Crash Logger for Production Debugging ---
+process.on('uncaughtException', (err) => {
+  try {
+    fs.writeFileSync(path.join(__dirname, 'crash.log'), `Uncaught Exception:\n${err.stack || err.message}\n`, 'utf8');
+  } catch (e) {}
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  try {
+    fs.writeFileSync(path.join(__dirname, 'crash.log'), `Unhandled Rejection:\n${reason && reason.stack || reason}\n`, 'utf8');
+  } catch (e) {}
+  process.exit(1);
+});
+
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const express = require('express');
 const cors = require('cors');
@@ -10,17 +27,45 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const FormData = require('form-data');
 const fetch = require('node-fetch');
-const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --- Validate Environment Variables for Production ---
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error(`
+  ╔═══════════════════════════════════════════════════════════╗
+  ║ ❌ ERROR: MISSING REQUIRED ENVIRONMENT VARIABLES!        ║
+  ║                                                           ║
+  ║ Please configure the following in your hosting provider: ║
+  ║ - SUPABASE_URL                                            ║
+  ║ - SUPABASE_SERVICE_ROLE_KEY                               ║
+  ╚═══════════════════════════════════════════════════════════╝
+  `);
+  process.exit(1);
+}
+
+const envJwtSecret = process.env.JWT_SECRET;
+if (!envJwtSecret) {
+  console.warn(`
+  ╔═══════════════════════════════════════════════════════════╗
+  ║ ⚠️ WARNING: JWT_SECRET IS NOT CONFIGURED!                  ║
+  ║                                                           ║
+  ║ A default insecure secret is being used. For security,    ║
+  ║ please set the JWT_SECRET environment variable in your    ║
+  ║ hosting provider dashboard.                               ║
+  ╚═══════════════════════════════════════════════════════════╝
+  `);
+}
+const ACTUAL_JWT_SECRET = envJwtSecret || 'cyber-rental-default-fallback-secret-key';
+
 // --- Supabase Client (Service Role — bypasses RLS) ---
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+global.WebSocket = require('ws');
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 // --- Tuya Smart API Client ---
 // ใช้ HMAC-SHA256 สำหรับ Signature ตามมาตรฐาน Tuya Open API
@@ -43,6 +88,9 @@ const TUYA_CLIENT_SECRET = process.env.TUYA_CLIENT_SECRET;
 
 // ดึง Tuya Access Token
 async function getTuyaAccessToken() {
+  if (!TUYA_CLIENT_ID || !TUYA_CLIENT_SECRET) {
+    throw new Error('ระบบไม่ได้ตั้งค่า TUYA_CLIENT_ID หรือ TUYA_CLIENT_SECRET ใน Environment Variables');
+  }
   const t = Date.now().toString();
   const method = 'GET';
   const path = '/v1.0/token?grant_type=1';
@@ -96,9 +144,18 @@ async function sendTuyaCommand(deviceId, switchOn) {
 }
 
 // --- Middleware ---
+// Force HTTPS redirect
+app.use((req, res, next) => {
+  if (req.headers['x-forwarded-proto'] && req.headers['x-forwarded-proto'] === 'http') {
+    return res.redirect(301, `https://${req.headers.host}${req.url}`);
+  }
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
+app.use('/.well-known', express.static(path.join(__dirname, '.well-known')));
 
 // --- Multer (รับไฟล์สลิปในหน่วยความจำ) ---
 const upload = multer({
@@ -120,7 +177,7 @@ function authMiddleware(req, res, next) {
   }
   try {
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, ACTUAL_JWT_SECRET);
     req.user = decoded; // { id, username, role }
     next();
   } catch (err) {
@@ -139,7 +196,7 @@ function adminMiddleware(req, res, next) {
 function generateToken(user) {
   return jwt.sign(
     { id: user.id, username: user.username, role: user.role },
-    process.env.JWT_SECRET,
+    ACTUAL_JWT_SECRET,
     { expiresIn: '24h' }
   );
 }
@@ -462,6 +519,30 @@ app.post('/api/rent', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'เครื่องนี้ไม่ว่างในขณะนี้' });
     }
 
+    // ตรวจสอบสิทธิ์การเช่าตามประเภทเวลา (รายวัน, รายสัปดาห์, รายเดือน)
+    if (rent_unit === 'day' && machine.allow_daily === false) {
+      return res.status(400).json({ error: 'เครื่องนี้ไม่เปิดให้บริการเช่าแบบรายวัน' });
+    }
+    if (rent_unit === 'week' && machine.allow_weekly === false) {
+      return res.status(400).json({ error: 'เครื่องนี้ไม่เปิดให้บริการเช่าแบบรายสัปดาห์' });
+    }
+    if (rent_unit === 'month' && machine.allow_monthly === false) {
+      return res.status(400).json({ error: 'เครื่องนี้ไม่เปิดให้บริการเช่าแบบรายเดือน' });
+    }
+
+    // กรณีผ่าน duration_hours โดยตรง (Fallback)
+    if (!rent_unit && duration_hours) {
+      if (duration_hours >= 720 && machine.allow_monthly === false) {
+        return res.status(400).json({ error: 'เครื่องนี้ไม่เปิดให้บริการเช่าแบบรายเดือน' });
+      }
+      if (duration_hours >= 168 && machine.allow_weekly === false) {
+        return res.status(400).json({ error: 'เครื่องนี้ไม่เปิดให้บริการเช่าแบบรายสัปดาห์' });
+      }
+      if (duration_hours >= 24 && machine.allow_daily === false) {
+        return res.status(400).json({ error: 'เครื่องนี้ไม่เปิดให้บริการเช่าแบบรายวัน' });
+      }
+    }
+
     // คำนวณราคาและระยะเวลา
     let total_price;
     let computed_duration_hours = duration_hours;
@@ -606,6 +687,17 @@ app.post('/api/rent/extend', authMiddleware, async (req, res) => {
 
     if (!machine) return res.status(404).json({ error: 'ไม่พบเครื่องนี้' });
     
+    // ตรวจสอบสิทธิ์การต่อเวลาตามประเภทเวลา (รายวัน, รายสัปดาห์, รายเดือน)
+    if (rent_unit === 'day' && machine.allow_daily === false) {
+      return res.status(400).json({ error: 'เครื่องนี้ไม่เปิดให้ต่อเวลาแบบรายวัน' });
+    }
+    if (rent_unit === 'week' && machine.allow_weekly === false) {
+      return res.status(400).json({ error: 'เครื่องนี้ไม่เปิดให้ต่อเวลาแบบรายสัปดาห์' });
+    }
+    if (rent_unit === 'month' && machine.allow_monthly === false) {
+      return res.status(400).json({ error: 'เครื่องนี้ไม่เปิดให้ต่อเวลาแบบรายเดือน' });
+    }
+
     // ตรวจสอบสิทธิ์: ต้องเป็นผู้เช่าปัจจุบันของเครื่องและเครื่องต้องอยู่ในสถานะ in_use
     if (machine.current_user_id !== req.user.id || machine.status !== 'in_use') {
       return res.status(403).json({ error: 'คุณไม่ได้เช่าเครื่องนี้อยู่ หรือเครื่องหมดเวลาเช่าแล้ว' });
@@ -1273,7 +1365,8 @@ app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res
     const { name, category, cpu, ram, ssd, gpu, os, price_per_hour, price_per_day, price_per_week, price_per_month,
             rdp_ip, rdp_username, rdp_password,
             anydesk_id, anydesk_password, tuya_device_id,
-            image_url } = req.body;
+            image_url,
+            allow_daily, allow_weekly, allow_monthly, test_result } = req.body;
 
     if (!name || !category || !price_per_hour || !price_per_day) {
       return res.status(400).json({ error: 'กรุณากรอกข้อมูลที่จำเป็น' });
@@ -1292,7 +1385,11 @@ app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res
         rdp_username: rdp_username || null,
         rdp_password: rdp_password || null,
         anydesk_id, anydesk_password, tuya_device_id,
-        image_url
+        image_url,
+        allow_daily: allow_daily !== undefined ? (allow_daily === true || allow_daily === 'true') : true,
+        allow_weekly: allow_weekly !== undefined ? (allow_weekly === true || allow_weekly === 'true') : true,
+        allow_monthly: allow_monthly !== undefined ? (allow_monthly === true || allow_monthly === 'true') : true,
+        test_result: test_result || null
       })
       .select()
       .single();
@@ -1311,7 +1408,8 @@ app.put('/api/admin/machines/:id', authMiddleware, adminMiddleware, async (req, 
     const { name, category, cpu, ram, ssd, gpu, os, price_per_hour, price_per_day, price_per_week, price_per_month,
             rdp_ip, rdp_username, rdp_password,
             anydesk_id, anydesk_password, tuya_device_id,
-            image_url } = req.body;
+            image_url,
+            allow_daily, allow_weekly, allow_monthly, test_result } = req.body;
 
     const { data, error } = await supabase
       .from('machines')
@@ -1325,7 +1423,11 @@ app.put('/api/admin/machines/:id', authMiddleware, adminMiddleware, async (req, 
         rdp_username: rdp_username || null,
         rdp_password: rdp_password || null,
         anydesk_id, anydesk_password, tuya_device_id,
-        image_url
+        image_url,
+        allow_daily: allow_daily !== undefined ? (allow_daily === true || allow_daily === 'true') : true,
+        allow_weekly: allow_weekly !== undefined ? (allow_weekly === true || allow_weekly === 'true') : true,
+        allow_monthly: allow_monthly !== undefined ? (allow_monthly === true || allow_monthly === 'true') : true,
+        test_result: test_result || null
       })
       .eq('id', parseInt(req.params.id))
       .select()

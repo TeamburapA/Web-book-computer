@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard—ChickDDC
-</title>
+  <title>Dashboard—ChickDDC</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -20,7 +20,7 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6">
       <div class="flex items-center justify-between h-16">
         <a href="/" class="flex items-center gap-2">
-          <span class="text-2xl">🖥️</span>
+          <img src="favicon.png" alt="ChickDDC Logo" class="h-8 w-auto object-contain">
           <span class="text-xl font-bold gradient-text">ChickDDC</span>
         </a>
         <div class="hidden md:flex items-center gap-6">
@@ -181,6 +181,9 @@
           <button type="button" id="ext-unit-month" onclick="selectExtendUnit('month')" class="py-2.5 text-sm font-semibold rounded-md transition duration-200 text-gray-400 hover:text-white">รายเดือน</button>
         </div>
         
+        <!-- Savings Tips Container -->
+        <div id="extendSavingsTips" class="hidden"></div>
+
         <!-- Quantity input with plus/minus buttons -->
         <div class="flex items-center gap-3">
           <span class="text-sm text-gray-400 font-medium">จำนวน:</span>

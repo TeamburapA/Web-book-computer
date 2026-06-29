@@ -469,35 +469,39 @@ function openExtendModal(machineId) {
   const btnWeek = document.getElementById('ext-unit-week');
   const btnMonth = document.getElementById('ext-unit-month');
 
-  if (machine.allow_daily !== false) {
+  const isDailyAllowed = machine.allow_daily !== false && machine.allow_daily !== 'false' && machine.allow_daily !== 0 && machine.allow_daily !== '0';
+  const isWeeklyAllowed = machine.allow_weekly !== false && machine.allow_weekly !== 'false' && machine.allow_weekly !== 0 && machine.allow_weekly !== '0';
+  const isMonthlyAllowed = machine.allow_monthly !== false && machine.allow_monthly !== 'false' && machine.allow_monthly !== 0 && machine.allow_monthly !== '0';
+
+  if (isDailyAllowed) {
     btnDay.classList.remove('hidden');
   } else {
     btnDay.classList.add('hidden');
   }
 
-  if (machine.allow_weekly !== false) {
+  if (isWeeklyAllowed) {
     btnWeek.classList.remove('hidden');
   } else {
     btnWeek.classList.add('hidden');
   }
 
-  if (machine.allow_monthly !== false) {
+  if (isMonthlyAllowed) {
     btnMonth.classList.remove('hidden');
   } else {
     btnMonth.classList.add('hidden');
   }
 
-  const allowedCount = [machine.allow_daily !== false, machine.allow_weekly !== false, machine.allow_monthly !== false].filter(Boolean).length;
+  const allowedCount = [isDailyAllowed, isWeeklyAllowed, isMonthlyAllowed].filter(Boolean).length;
   const parentContainer = btnDay.parentElement;
   if (parentContainer) {
     parentContainer.className = `grid gap-2 bg-cyber-dark p-1 rounded-lg border border-cyber-border grid-cols-${allowedCount || 1}`;
   }
 
-  if (machine.allow_daily !== false) {
+  if (isDailyAllowed) {
     currentExtendUnit = 'day';
-  } else if (machine.allow_weekly !== false) {
+  } else if (isWeeklyAllowed) {
     currentExtendUnit = 'week';
-  } else if (machine.allow_monthly !== false) {
+  } else if (isMonthlyAllowed) {
     currentExtendUnit = 'month';
   } else {
     currentExtendUnit = 'day';
@@ -520,6 +524,7 @@ function openExtendModal(machineId) {
 
   // Calculate default price
   updateExtendCalculation(machine);
+  updateSavingsTips(machine, 'extendSavingsTips');
 
   showModal('extendModal');
 }
@@ -528,9 +533,13 @@ function selectExtendUnit(unit) {
   const machine = activeMachines.find(m => m.id === selectedExtendMachineId);
   if (!machine) return;
 
-  if (unit === 'day' && machine.allow_daily === false) return;
-  if (unit === 'week' && machine.allow_weekly === false) return;
-  if (unit === 'month' && machine.allow_monthly === false) return;
+  const isDailyAllowed = machine.allow_daily !== false && machine.allow_daily !== 'false' && machine.allow_daily !== 0 && machine.allow_daily !== '0';
+  const isWeeklyAllowed = machine.allow_weekly !== false && machine.allow_weekly !== 'false' && machine.allow_weekly !== 0 && machine.allow_weekly !== '0';
+  const isMonthlyAllowed = machine.allow_monthly !== false && machine.allow_monthly !== 'false' && machine.allow_monthly !== 0 && machine.allow_monthly !== '0';
+
+  if (unit === 'day' && !isDailyAllowed) return;
+  if (unit === 'week' && !isWeeklyAllowed) return;
+  if (unit === 'month' && !isMonthlyAllowed) return;
 
   currentExtendUnit = unit;
   
@@ -551,9 +560,11 @@ function updateExtendUnitButtonsHighlight() {
     const btn = document.getElementById(`ext-unit-${u}`);
     if (!btn) return;
     if (u === currentExtendUnit) {
-      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-yellow-400 bg-white/5 border border-yellow-400/20";
+      btn.classList.add('text-yellow-400', 'bg-white/5', 'border', 'border-yellow-400/20');
+      btn.classList.remove('text-gray-400', 'hover:text-white');
     } else {
-      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-gray-400 hover:text-white";
+      btn.classList.remove('text-yellow-400', 'bg-white/5', 'border', 'border-yellow-400/20');
+      btn.classList.add('text-gray-400', 'hover:text-white');
     }
   });
 }

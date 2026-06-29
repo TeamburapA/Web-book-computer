@@ -59,6 +59,47 @@ function renderMachines(machines) {
 
   grid.innerHTML = machines.map((m, idx) => {
     const isMyMachine = currentUser && m.current_user_id === currentUser.id;
+    const isDailyAllowed = m.allow_daily !== false && m.allow_daily !== 'false' && m.allow_daily !== 0 && m.allow_daily !== '0';
+    const isWeeklyAllowed = m.allow_weekly !== false && m.allow_weekly !== 'false' && m.allow_weekly !== 0 && m.allow_weekly !== '0';
+    const isMonthlyAllowed = m.allow_monthly !== false && m.allow_monthly !== 'false' && m.allow_monthly !== 0 && m.allow_monthly !== '0';
+
+    // Calculate maximum discount percentage for the card badge
+    let maxDiscountPct = 0;
+    if (isDailyAllowed) {
+      const pricePerDay = parseFloat(m.price_per_day);
+      if (pricePerDay > 0) {
+        if (isWeeklyAllowed) {
+          const pricePerWeek = parseFloat(m.price_per_week);
+          const normalWeeklyPrice = pricePerDay * 7;
+          const actualWeeklyPrice = pricePerWeek > 0 ? pricePerWeek : normalWeeklyPrice;
+          if (actualWeeklyPrice < normalWeeklyPrice) {
+            const pct = Math.round((1 - (actualWeeklyPrice / normalWeeklyPrice)) * 100);
+            if (pct > maxDiscountPct) maxDiscountPct = pct;
+          }
+        }
+        if (isMonthlyAllowed) {
+          const pricePerMonth = parseFloat(m.price_per_month);
+          const normalMonthlyPrice = pricePerDay * 30;
+          const actualMonthlyPrice = pricePerMonth > 0 ? pricePerMonth : normalMonthlyPrice;
+          if (actualMonthlyPrice < normalMonthlyPrice) {
+            const pct = Math.round((1 - (actualMonthlyPrice / normalMonthlyPrice)) * 100);
+            if (pct > maxDiscountPct) maxDiscountPct = pct;
+          }
+        }
+      }
+    } else {
+      if (isWeeklyAllowed && isMonthlyAllowed) {
+        const pricePerWeek = parseFloat(m.price_per_week);
+        const pricePerMonth = parseFloat(m.price_per_month);
+        if (pricePerWeek > 0 && pricePerMonth > 0) {
+          const weeklyEquivalent = (pricePerWeek / 7) * 30;
+          if (pricePerMonth < weeklyEquivalent) {
+            const pct = Math.round((1 - (pricePerMonth / weeklyEquivalent)) * 100);
+            if (pct > maxDiscountPct) maxDiscountPct = pct;
+          }
+        }
+      }
+    }
 
     return `
       <div class="cyber-card animate-slide-up group" style="animation-delay: ${idx * 0.05}s" id="machine-card-${m.id}">
@@ -109,21 +150,26 @@ function renderMachines(machines) {
 
           <!-- Price -->
           <div class="flex items-center justify-between py-3 border-t border-[#1f1f27]">
-            <div class="flex flex-col">
-              <span class="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">ราคาเช่า</span>
-              <div class="flex items-baseline gap-0.5 mt-0.5">
-                ${m.allow_daily !== false ? `
-                  <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_day).split('.')[0]}</span>
-                  <span class="text-zinc-500 text-xs font-semibold">/วัน</span>
-                ` : m.allow_weekly !== false ? `
-                  <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_week > 0 ? m.price_per_week : parseFloat(m.price_per_day) * 7).split('.')[0]}</span>
-                  <span class="text-zinc-500 text-xs font-semibold">/สัปดาห์</span>
-                ` : m.allow_monthly !== false ? `
-                  <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_month > 0 ? m.price_per_month : parseFloat(m.price_per_day) * 30).split('.')[0]}</span>
-                  <span class="text-zinc-500 text-xs font-semibold">/เดือน</span>
-                ` : `
-                  <span class="text-sm font-bold text-gray-500">ไม่ได้เปิดเช่า</span>
-                `}
+            <div class="flex flex-col w-full">
+              <span class="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold font-mono">ราคาเช่า</span>
+              <div class="flex items-center justify-between w-full mt-0.5">
+                <div class="flex items-baseline gap-0.5">
+                  ${isDailyAllowed ? `
+                    <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_day).split('.')[0]}</span>
+                    <span class="text-zinc-500 text-xs font-semibold">/วัน</span>
+                  ` : isWeeklyAllowed ? `
+                    <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_week > 0 ? m.price_per_week : parseFloat(m.price_per_day) * 7).split('.')[0]}</span>
+                    <span class="text-zinc-500 text-xs font-semibold">/สัปดาห์</span>
+                  ` : isMonthlyAllowed ? `
+                    <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_month > 0 ? m.price_per_month : parseFloat(m.price_per_day) * 30).split('.')[0]}</span>
+                    <span class="text-zinc-500 text-xs font-semibold">/เดือน</span>
+                  ` : `
+                    <span class="text-sm font-bold text-gray-500">ไม่ได้เปิดเช่า</span>
+                  `}
+                </div>
+                ${maxDiscountPct > 0 ? `
+                  <span class="px-2.5 py-1 text-xs font-black bg-gradient-to-r from-red-500 via-rose-500 to-[#ff0055] text-white rounded shadow-[0_0_10px_rgba(239,68,68,0.5)] uppercase tracking-wider font-mono">ลดสูงสุด ${maxDiscountPct}%</span>
+                ` : ''}
               </div>
             </div>
           </div>
@@ -228,35 +274,39 @@ function openRentalModal(machineId) {
   const btnWeek = document.getElementById('unit-week');
   const btnMonth = document.getElementById('unit-month');
 
-  if (machine.allow_daily !== false) {
+  const isDailyAllowed = machine.allow_daily !== false && machine.allow_daily !== 'false' && machine.allow_daily !== 0 && machine.allow_daily !== '0';
+  const isWeeklyAllowed = machine.allow_weekly !== false && machine.allow_weekly !== 'false' && machine.allow_weekly !== 0 && machine.allow_weekly !== '0';
+  const isMonthlyAllowed = machine.allow_monthly !== false && machine.allow_monthly !== 'false' && machine.allow_monthly !== 0 && machine.allow_monthly !== '0';
+
+  if (isDailyAllowed) {
     btnDay.classList.remove('hidden');
   } else {
     btnDay.classList.add('hidden');
   }
 
-  if (machine.allow_weekly !== false) {
+  if (isWeeklyAllowed) {
     btnWeek.classList.remove('hidden');
   } else {
     btnWeek.classList.add('hidden');
   }
 
-  if (machine.allow_monthly !== false) {
+  if (isMonthlyAllowed) {
     btnMonth.classList.remove('hidden');
   } else {
     btnMonth.classList.add('hidden');
   }
 
-  const allowedCount = [machine.allow_daily !== false, machine.allow_weekly !== false, machine.allow_monthly !== false].filter(Boolean).length;
+  const allowedCount = [isDailyAllowed, isWeeklyAllowed, isMonthlyAllowed].filter(Boolean).length;
   const parentContainer = btnDay.parentElement;
   if (parentContainer) {
     parentContainer.className = `grid gap-2 bg-cyber-dark p-1 rounded-lg border border-cyber-border grid-cols-${allowedCount || 1}`;
   }
 
-  if (machine.allow_daily !== false) {
+  if (isDailyAllowed) {
     currentRentUnit = 'day';
-  } else if (machine.allow_weekly !== false) {
+  } else if (isWeeklyAllowed) {
     currentRentUnit = 'week';
-  } else if (machine.allow_monthly !== false) {
+  } else if (isMonthlyAllowed) {
     currentRentUnit = 'month';
   } else {
     currentRentUnit = 'day';
@@ -282,6 +332,7 @@ function openRentalModal(machineId) {
 
   // Calculate default price
   updateRentCalculation(machine);
+  updateSavingsTips(machine, 'rentalSavingsTips');
 
   showModal('rentalModal');
 }
@@ -301,9 +352,13 @@ function selectRentUnit(unit) {
   const machine = allMachines.find(m => m.id === selectedMachineId);
   if (!machine) return;
 
-  if (unit === 'day' && machine.allow_daily === false) return;
-  if (unit === 'week' && machine.allow_weekly === false) return;
-  if (unit === 'month' && machine.allow_monthly === false) return;
+  const isDailyAllowed = machine.allow_daily !== false && machine.allow_daily !== 'false' && machine.allow_daily !== 0 && machine.allow_daily !== '0';
+  const isWeeklyAllowed = machine.allow_weekly !== false && machine.allow_weekly !== 'false' && machine.allow_weekly !== 0 && machine.allow_weekly !== '0';
+  const isMonthlyAllowed = machine.allow_monthly !== false && machine.allow_monthly !== 'false' && machine.allow_monthly !== 0 && machine.allow_monthly !== '0';
+
+  if (unit === 'day' && !isDailyAllowed) return;
+  if (unit === 'week' && !isWeeklyAllowed) return;
+  if (unit === 'month' && !isMonthlyAllowed) return;
 
   currentRentUnit = unit;
   
@@ -325,9 +380,11 @@ function updateUnitButtonsHighlight() {
     const btn = document.getElementById(`unit-${u}`);
     if (!btn) return;
     if (u === currentRentUnit) {
-      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-yellow-400 bg-white/5 border border-yellow-400/20";
+      btn.classList.add('text-yellow-400', 'bg-white/5', 'border', 'border-yellow-400/20');
+      btn.classList.remove('text-gray-400', 'hover:text-white');
     } else {
-      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-gray-400 hover:text-white";
+      btn.classList.remove('text-yellow-400', 'bg-white/5', 'border', 'border-yellow-400/20');
+      btn.classList.add('text-gray-400', 'hover:text-white');
     }
   });
 }
@@ -544,35 +601,39 @@ function openExtendModal(machineId) {
   const btnWeek = document.getElementById('ext-unit-week');
   const btnMonth = document.getElementById('ext-unit-month');
 
-  if (machine.allow_daily !== false) {
+  const isDailyAllowed = machine.allow_daily !== false && machine.allow_daily !== 'false' && machine.allow_daily !== 0 && machine.allow_daily !== '0';
+  const isWeeklyAllowed = machine.allow_weekly !== false && machine.allow_weekly !== 'false' && machine.allow_weekly !== 0 && machine.allow_weekly !== '0';
+  const isMonthlyAllowed = machine.allow_monthly !== false && machine.allow_monthly !== 'false' && machine.allow_monthly !== 0 && machine.allow_monthly !== '0';
+
+  if (isDailyAllowed) {
     btnDay.classList.remove('hidden');
   } else {
     btnDay.classList.add('hidden');
   }
 
-  if (machine.allow_weekly !== false) {
+  if (isWeeklyAllowed) {
     btnWeek.classList.remove('hidden');
   } else {
     btnWeek.classList.add('hidden');
   }
 
-  if (machine.allow_monthly !== false) {
+  if (isMonthlyAllowed) {
     btnMonth.classList.remove('hidden');
   } else {
     btnMonth.classList.add('hidden');
   }
 
-  const allowedCount = [machine.allow_daily !== false, machine.allow_weekly !== false, machine.allow_monthly !== false].filter(Boolean).length;
+  const allowedCount = [isDailyAllowed, isWeeklyAllowed, isMonthlyAllowed].filter(Boolean).length;
   const parentContainer = btnDay.parentElement;
   if (parentContainer) {
     parentContainer.className = `grid gap-2 bg-cyber-dark p-1 rounded-lg border border-cyber-border grid-cols-${allowedCount || 1}`;
   }
 
-  if (machine.allow_daily !== false) {
+  if (isDailyAllowed) {
     currentExtendUnit = 'day';
-  } else if (machine.allow_weekly !== false) {
+  } else if (isWeeklyAllowed) {
     currentExtendUnit = 'week';
-  } else if (machine.allow_monthly !== false) {
+  } else if (isMonthlyAllowed) {
     currentExtendUnit = 'month';
   } else {
     currentExtendUnit = 'day';
@@ -595,6 +656,7 @@ function openExtendModal(machineId) {
 
   // Calculate default price
   updateExtendCalculation(machine);
+  updateSavingsTips(machine, 'extendSavingsTips');
 
   showModal('extendModal');
 }
@@ -603,9 +665,13 @@ function selectExtendUnit(unit) {
   const machine = allMachines.find(m => m.id === selectedExtendMachineId);
   if (!machine) return;
 
-  if (unit === 'day' && machine.allow_daily === false) return;
-  if (unit === 'week' && machine.allow_weekly === false) return;
-  if (unit === 'month' && machine.allow_monthly === false) return;
+  const isDailyAllowed = machine.allow_daily !== false && machine.allow_daily !== 'false' && machine.allow_daily !== 0 && machine.allow_daily !== '0';
+  const isWeeklyAllowed = machine.allow_weekly !== false && machine.allow_weekly !== 'false' && machine.allow_weekly !== 0 && machine.allow_weekly !== '0';
+  const isMonthlyAllowed = machine.allow_monthly !== false && machine.allow_monthly !== 'false' && machine.allow_monthly !== 0 && machine.allow_monthly !== '0';
+
+  if (unit === 'day' && !isDailyAllowed) return;
+  if (unit === 'week' && !isWeeklyAllowed) return;
+  if (unit === 'month' && !isMonthlyAllowed) return;
 
   currentExtendUnit = unit;
   
@@ -626,9 +692,11 @@ function updateExtendUnitButtonsHighlight() {
     const btn = document.getElementById(`ext-unit-${u}`);
     if (!btn) return;
     if (u === currentExtendUnit) {
-      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-yellow-400 bg-white/5 border border-yellow-400/20";
+      btn.classList.add('text-yellow-400', 'bg-white/5', 'border', 'border-yellow-400/20');
+      btn.classList.remove('text-gray-400', 'hover:text-white');
     } else {
-      btn.className = "py-2.5 text-sm font-semibold rounded-md transition duration-200 text-gray-400 hover:text-white";
+      btn.classList.remove('text-yellow-400', 'bg-white/5', 'border', 'border-yellow-400/20');
+      btn.classList.add('text-gray-400', 'hover:text-white');
     }
   });
 }

@@ -145,6 +145,108 @@ function requireLogin(action) {
   return true;
 }
 
+// --- Display Pricing Savings Tips ---
+function updateSavingsTips(machine, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const isDailyAllowed = machine.allow_daily !== false && machine.allow_daily !== 'false' && machine.allow_daily !== 0 && machine.allow_daily !== '0';
+  const isWeeklyAllowed = machine.allow_weekly !== false && machine.allow_weekly !== 'false' && machine.allow_weekly !== 0 && machine.allow_weekly !== '0';
+  const isMonthlyAllowed = machine.allow_monthly !== false && machine.allow_monthly !== 'false' && machine.allow_monthly !== 0 && machine.allow_monthly !== '0';
+
+  let tips = [];
+
+  if (isDailyAllowed) {
+    const pricePerDay = parseFloat(machine.price_per_day);
+    if (pricePerDay > 0) {
+      if (isWeeklyAllowed) {
+        const pricePerWeek = parseFloat(machine.price_per_week);
+        const normalWeeklyPrice = pricePerDay * 7;
+        const actualWeeklyPrice = pricePerWeek > 0 ? pricePerWeek : normalWeeklyPrice;
+        if (actualWeeklyPrice < normalWeeklyPrice) {
+          const pct = Math.round((1 - (actualWeeklyPrice / normalWeeklyPrice)) * 100);
+          const saved = normalWeeklyPrice - actualWeeklyPrice;
+          tips.push(`
+            <div class="flex items-center justify-between p-2.5 bg-emerald-500/5 border border-emerald-500/10 rounded-lg">
+              <div class="flex items-center gap-2">
+                <span class="text-emerald-400 font-bold text-sm">⚡</span>
+                <span class="text-zinc-300 font-semibold">รายสัปดาห์ (ประหยัดกว่ารายวัน)</span>
+              </div>
+              <div class="text-right flex flex-col items-end gap-1">
+                <span class="px-2 py-0.5 text-[10px] font-black bg-emerald-500 text-black rounded font-mono shadow-[0_0_8px_rgba(16,185,129,0.4)]">ประหยัด ${pct}%</span>
+                <p class="text-[10px] text-yellow-400 font-bold font-mono">เซฟได้ ฿${formatCurrency(saved).split('.')[0]}</p>
+              </div>
+            </div>
+          `);
+        }
+      }
+      if (isMonthlyAllowed) {
+        const pricePerMonth = parseFloat(machine.price_per_month);
+        const normalMonthlyPrice = pricePerDay * 30;
+        const actualMonthlyPrice = pricePerMonth > 0 ? pricePerMonth : normalMonthlyPrice;
+        if (actualMonthlyPrice < normalMonthlyPrice) {
+          const pct = Math.round((1 - (actualMonthlyPrice / normalMonthlyPrice)) * 100);
+          const saved = normalMonthlyPrice - actualMonthlyPrice;
+          tips.push(`
+            <div class="flex items-center justify-between p-2.5 bg-emerald-500/5 border border-emerald-500/10 rounded-lg">
+              <div class="flex items-center gap-2">
+                <span class="text-emerald-400 font-bold text-sm">⚡</span>
+                <span class="text-zinc-300 font-semibold">รายเดือน (ประหยัดกว่ารายวัน)</span>
+              </div>
+              <div class="text-right flex flex-col items-end gap-1">
+                <span class="px-2 py-0.5 text-[10px] font-black bg-emerald-500 text-black rounded font-mono shadow-[0_0_8px_rgba(16,185,129,0.4)]">ประหยัด ${pct}%</span>
+                <p class="text-[10px] text-yellow-400 font-bold font-mono">เซฟได้ ฿${formatCurrency(saved).split('.')[0]}</p>
+              </div>
+            </div>
+          `);
+        }
+      }
+    }
+  } else {
+    if (isWeeklyAllowed && isMonthlyAllowed) {
+      const pricePerWeek = parseFloat(machine.price_per_week);
+      const pricePerMonth = parseFloat(machine.price_per_month);
+      if (pricePerWeek > 0 && pricePerMonth > 0) {
+        const weeklyEquivalent = (pricePerWeek / 7) * 30;
+        if (pricePerMonth < weeklyEquivalent) {
+          const pct = Math.round((1 - (pricePerMonth / weeklyEquivalent)) * 100);
+          const saved = weeklyEquivalent - pricePerMonth;
+          tips.push(`
+            <div class="flex items-center justify-between p-2.5 bg-emerald-500/5 border border-emerald-500/10 rounded-lg">
+              <div class="flex items-center gap-2">
+                <span class="text-emerald-400 font-bold text-sm">⚡</span>
+                <span class="text-zinc-300 font-semibold">รายเดือน (ประหยัดกว่ารายสัปดาห์)</span>
+              </div>
+              <div class="text-right flex flex-col items-end gap-1">
+                <span class="px-2 py-0.5 text-[10px] font-black bg-emerald-500 text-black rounded font-mono shadow-[0_0_8px_rgba(16,185,129,0.4)]">ประหยัด ${pct}%</span>
+                <p class="text-[10px] text-yellow-400 font-bold font-mono">เซฟได้ ฿${formatCurrency(saved).split('.')[0]}</p>
+              </div>
+            </div>
+          `);
+        }
+      }
+    }
+  }
+
+  if (tips.length > 0) {
+    container.innerHTML = `
+      <div class="bg-emerald-950/20 border border-emerald-500/30 rounded-xl p-3 text-xs text-gray-300 space-y-2 mt-3 shadow-[0_0_15px_rgba(16,185,129,0.05)]">
+        <p class="text-emerald-400 font-extrabold flex items-center gap-2 mb-2 text-[12px] tracking-wide uppercase font-mono">
+          <span>🔥</span> ดีลสุดคุ้มสำหรับเครื่องนี้
+        </p>
+        <div class="space-y-2">
+          ${tips.join('')}
+        </div>
+      </div>
+    `;
+    container.classList.remove('hidden');
+  } else {
+    container.innerHTML = '';
+    container.classList.add('hidden');
+  }
+}
+
+
 // --- Load and Bind Contact Links ---
 document.addEventListener('DOMContentLoaded', async () => {
   try {

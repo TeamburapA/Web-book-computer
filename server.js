@@ -928,7 +928,10 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
     // EasySlip v2 ใช้ success: true ส่วน EasySlip v1 (legacy) ใช้ status: 200
     const isSuccess = slipResult.success === true || slipResult.status === 200 || slipResult.status === '200';
     if (!isSuccess || !slipResult.data) {
-      const errorMsg = (slipResult.error && slipResult.error.message) || slipResult.message || 'สลิปไม่ถูกต้องหรือไม่สามารถอ่าน QR Code ได้';
+      let errorMsg = (slipResult.error && slipResult.error.message) || slipResult.message || 'สลิปไม่ถูกต้องหรือไม่สามารถอ่าน QR Code ได้';
+      if (errorMsg === 'application_expired') {
+        errorMsg = 'ระบบตรวจสอบสลิปขัดข้อง (API EasySlip หมดอายุ/ไม่ได้ต่ออายุแพ็กเกจ) กรุณาติดต่อแอดมิน';
+      }
       await supabase.from('topups').insert({
         user_id: req.user.id,
         amount: 0,
@@ -1070,67 +1073,18 @@ app.post('/api/verify-angpao', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'ซองของขวัญนี้ถูกใช้งานในระบบไปแล้ว ไม่สามารถใช้ซ้ำได้' });
     }
 
-    // เรียก API ทรูมันนี่ เพื่อแลกซองของขวัญ ผ่าน curl เพื่อเลี่ยงการตรวจจับ TLS Fingerprint ของ Cloudflare
-    const curlCmd = process.platform === 'win32' ? 'curl.exe' : 'curl';
-    const { execFile } = require('child_process');
-    
-    const redeemUrl = `https://gift.truemoney.com/campaign/vouchers/${voucherHash}/redeem`;
-    const requestBody = JSON.stringify({
-      mobile: adminPhone,
-      voucher_hash: voucherHash
-    });
-    
-    const curlArgs = [
-      '-s',
-      '-X', 'POST',
-      '-H', 'Content-Type: application/json',
-      '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      '-d', requestBody,
-      redeemUrl
-    ];
-
-    const result = await new Promise((resolve, reject) => {
-      execFile(curlCmd, curlArgs, (error, stdout, stderr) => {
-        if (error) {
-          return reject(new Error(`Failed to execute curl: ${error.message}`));
-        }
-        try {
-          const json = JSON.parse(stdout);
-          resolve(json);
-        } catch (parseError) {
-          reject(new Error(`Failed to parse TrueMoney response: ${stdout || stderr}`));
-        }
-      });
-    });
+    // เรียก API ภายนอกเพื่อแลกซองของขวัญ
+    const response = await fetch(`https://api.xpluem.com/${voucherHash}/${adminPhone}`);
+    const result = await response.json();
 
     // ตรวจสอบผลลัพธ์
-    const isSuccess = result.status && (result.status.code === 'SUCCESS' || result.status.message === 'success');
-    if (!isSuccess) {
-      let errMsg = 'ลิงก์ซองของขวัญไม่ถูกต้อง หรือถูกใช้งานไปแล้ว';
-      if (result.status && result.status.code) {
-        if (result.status.code === 'VOUCHER_OUT_OF_STOCK') {
-          errMsg = 'ซองของขวัญนี้ถูกรับไปหมดแล้ว';
-        } else if (result.status.code === 'VOUCHER_NOT_FOUND') {
-          errMsg = 'ไม่พบซองของขวัญนี้ในระบบ TrueMoney';
-        } else if (result.status.code === 'VOUCHER_EXPIRED') {
-          errMsg = 'ซองของขวัญนี้หมดอายุแล้ว';
-        } else if (result.status.code === 'TARGET_USER_REDEEMED') {
-          errMsg = 'เบอร์โทรศัพท์นี้ได้ทำการรับซองของขวัญนี้ไปแล้ว';
-        } else {
-          errMsg = `TrueMoney Error: ${result.status.code} - ${result.status.message || ''}`;
-        }
-      }
+    if (!result.success) {
+      const errMsg = result.message || 'ลิงก์ซองของขวัญไม่ถูกต้อง หรือถูกใช้งานไปแล้ว';
       return res.status(400).json({ error: errMsg });
     }
 
     // ดึงจำนวนเงินที่ได้รับจริง
-    let amount = 0;
-    if (result.data && result.data.my_ticket && result.data.my_ticket.amount_baht) {
-      amount = parseFloat(result.data.my_ticket.amount_baht);
-    } else if (result.data && result.data.voucher && result.data.voucher.amount_baht) {
-      amount = parseFloat(result.data.voucher.amount_baht);
-    }
-
+    const amount = parseFloat(result.data ? result.data.amount : 0);
     if (isNaN(amount) || amount <= 0) {
       return res.status(400).json({ error: 'จำนวนเงินในซองไม่ถูกต้อง หรือซองว่างเปล่า' });
     }
@@ -1150,7 +1104,7 @@ app.post('/api/verify-angpao', authMiddleware, async (req, res) => {
       .eq('id', req.user.id);
 
     // ดึงชื่อผู้ส่งซอง (ถ้ามี)
-    const senderName = (result.data && result.data.owner_profile && result.data.owner_profile.full_name) || 'N/A';
+    const senderName = (result.data && result.data.name) || 'N/A';
 
     // บันทึกในประวัติการเติมเงิน (topup record)
     await supabase.from('topups').insert({
@@ -1158,7 +1112,7 @@ app.post('/api/verify-angpao', authMiddleware, async (req, res) => {
       amount: amount,
       transaction_ref: voucherHash,
       status: 'approved',
-      note: `ซองทรูมันนี่ — จากคุณ ${senderName}`,
+      note: `ซองทรูมันนี่ (ผ่าน API xpluem) — จากคุณ ${senderName}`,
       slip_data: result.data
     });
 
@@ -1170,7 +1124,7 @@ app.post('/api/verify-angpao', authMiddleware, async (req, res) => {
 
   } catch (err) {
     console.error('Verify Angpao error:', err);
-    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการตรวจสอบซองของขวัญ' });
+    res.status(500).json({ error: `เกิดข้อผิดพลาดในการตรวจสอบซองของขวัญ: ${err.message}` });
   }
 });
 

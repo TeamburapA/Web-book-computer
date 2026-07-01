@@ -4,7 +4,7 @@ Error: listen EADDRINUSE: address already in use :::3000
     at listenInCluster (node:net:2005:12)
     at Server.listen (node:net:2110:7)
     at app.listen (C:\งาน\web book computer\node_modules\express\lib\application.js:635:24)
-    at Object.<anonymous> (C:\งาน\web book computer\server.js:1887:5)
+    at Object.<anonymous> (C:\งาน\web book computer\server.js:2234:5)
     at Module._compile (node:internal/modules/cjs/loader:1812:14)
     at Object..js (node:internal/modules/cjs/loader:1943:10)
     at Module.load (node:internal/modules/cjs/loader:1533:32)

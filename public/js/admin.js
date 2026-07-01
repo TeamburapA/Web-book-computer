@@ -31,13 +31,15 @@ async function initAdmin() {
       loadAdminRentals(),
       loadAdminTopups(),
       loadAdminUsers(),
-      loadAdminSettings()
+      loadAdminSettings(),
+      loadAdminFinance()
     ]);
 
     setupMachineForm();
     setupUserCreditForm();
     setupUserTimeForm();
     setupSettingsForm();
+    setupElectricityForm();
   } catch (err) {
     document.getElementById('accessDenied').classList.remove('hidden');
     document.getElementById('adminContent').classList.add('hidden');
@@ -46,7 +48,7 @@ async function initAdmin() {
 
 // --- Tab Switching ---
 function switchAdminTab(tab) {
-  ['machines', 'rentals', 'topups', 'users', 'settings'].forEach(t => {
+  ['machines', 'rentals', 'topups', 'users', 'settings', 'finance'].forEach(t => {
     document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
     document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
   });
@@ -682,5 +684,232 @@ async function toggleMachinePowerOutage(id, action) {
     ]);
   } catch (err) {
     showToast(err.error || 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะ', 'error');
+  }
+}
+
+// =============================================
+// FINANCE & ELECTRICITY BILL MANAGEMENT
+// =============================================
+let financeData = { daily: [], weekly: [], monthly: [], yearly: [] };
+let currentFinancePeriod = 'daily';
+
+async function loadAdminFinance() {
+  const summaryContainer = document.getElementById('financeSummaryContainer');
+  const logsContainer = document.getElementById('electricityLogsContainer');
+
+  try {
+    const summaryRes = await apiFetch('/api/admin/financial-summary');
+    if (summaryRes.success) {
+      financeData = {
+        daily: summaryRes.daily || [],
+        weekly: summaryRes.weekly || [],
+        monthly: summaryRes.monthly || [],
+        yearly: summaryRes.yearly || []
+      };
+      renderFinanceSummary();
+    }
+  } catch (err) {
+    console.error('Error loading finance summary:', err);
+    if (summaryContainer) {
+      summaryContainer.innerHTML = `<div class="text-center py-8 text-red-400">❌ โหลดข้อมูลรายงานการเงินไม่สำเร็จ</div>`;
+    }
+  }
+
+  try {
+    const logsRes = await apiFetch('/api/admin/electricity-costs');
+    if (logsRes.success) {
+      renderElectricityCosts(logsRes.electricity_costs);
+    }
+  } catch (err) {
+    console.error('Error loading electricity costs:', err);
+    if (logsContainer) {
+      logsContainer.innerHTML = `<div class="text-center py-8 text-red-400">❌ โหลดประวัติค่าไฟไม่สำเร็จ</div>`;
+    }
+  }
+}
+
+function renderFinanceSummary() {
+  const container = document.getElementById('financeSummaryContainer');
+  if (!container) return;
+
+  const list = financeData[currentFinancePeriod] || [];
+  if (list.length === 0) {
+    container.innerHTML = `<div class="text-center py-10 text-gray-500">📭 ยังไม่มีข้อมูลสรุปสำหรับช่วงเวลานี้</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <table class="cyber-table w-full">
+      <thead>
+        <tr>
+          <th>ช่วงเวลา</th>
+          <th>รายได้ค่าเช่า</th>
+          <th>ยอดเติมเงิน (อนุมัติ)</th>
+          <th>ค่าไฟฟ้าที่หัก</th>
+          <th>กำไรสุทธิ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${list.map(item => {
+          const isProfit = item.profit >= 0;
+          return `
+            <tr class="hover:bg-white/5 transition">
+              <td class="font-semibold text-white whitespace-nowrap">${item.label || item.period}</td>
+              <td class="text-cyan-400 font-bold whitespace-nowrap">฿${formatCurrency(item.revenue)}</td>
+              <td class="text-pink-400 whitespace-nowrap">฿${formatCurrency(item.topups)}</td>
+              <td class="text-red-400 whitespace-nowrap">฿${formatCurrency(item.electricity)}</td>
+              <td class="${isProfit ? 'text-green-400 font-bold' : 'text-red-500 font-bold'} whitespace-nowrap">
+                ฿${formatCurrency(item.profit)}
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function toggleFinancePeriod(period) {
+  currentFinancePeriod = period;
+  ['daily', 'weekly', 'monthly', 'yearly'].forEach(p => {
+    const btn = document.getElementById(`btn-period-${p}`);
+    if (btn) {
+      if (p === period) {
+        btn.className = "px-4 py-2 text-xs sm:text-sm bg-yellow-400/10 text-yellow-400 rounded-lg border border-yellow-400/20 hover:bg-yellow-400/20 transition font-medium whitespace-nowrap";
+      } else {
+        btn.className = "px-4 py-2 text-xs sm:text-sm bg-white/5 text-gray-400 rounded-lg border border-white/5 hover:bg-white/10 transition font-medium whitespace-nowrap";
+      }
+    }
+  });
+  renderFinanceSummary();
+}
+
+function renderElectricityCosts(logs) {
+  const container = document.getElementById('electricityLogsContainer');
+  if (!container) return;
+
+  if (!logs || logs.length === 0) {
+    container.innerHTML = `<div class="text-center py-10 text-gray-500">📭 ยังไม่มีประวัติการบันทึกค่าไฟฟ้า</div>`;
+    return;
+  }
+
+  const typeLabels = { day: 'รายวัน', week: 'รายสัปดาห์', month: 'รายเดือน', year: 'รายปี' };
+
+  container.innerHTML = `
+    <table class="cyber-table w-full">
+      <thead>
+        <tr>
+          <th>รอบเวลา</th>
+          <th>ประเภท</th>
+          <th>ค่าไฟฟ้า</th>
+          <th>หมายเหตุ</th>
+          <th>จัดการ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${logs.map(log => `
+          <tr class="hover:bg-white/5 transition">
+            <td class="font-mono text-xs text-white whitespace-nowrap font-bold">${log.period_key}</td>
+            <td class="whitespace-nowrap"><span class="px-2 py-0.5 rounded text-xs bg-yellow-400/10 text-yellow-400 border border-yellow-400/25">${typeLabels[log.period_type] || log.period_type}</span></td>
+            <td class="text-red-400 font-bold whitespace-nowrap">฿${formatCurrency(log.amount)}</td>
+            <td class="text-xs text-gray-400 max-w-[150px] truncate" title="${log.note || ''}">${log.note || '-'}</td>
+            <td class="whitespace-nowrap">
+              <button onclick="deleteElectricityCostLog(${log.id})" class="px-2.5 py-1 text-xs bg-red-500/10 text-red-400 rounded border border-red-500/20 hover:bg-red-500/20 transition" title="ลบ">🗑️ ลบ</button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function onElectricityPeriodTypeChange() {
+  const type = document.getElementById('elec_period_type').value;
+  const container = document.getElementById('elec_period_key_container');
+  if (!container) return;
+
+  const now = new Date();
+  const bangkokStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }); // 'YYYY-MM-DD'
+  const currentMonth = bangkokStr.substring(0, 7); // 'YYYY-MM'
+
+  if (type === 'day') {
+    container.innerHTML = `
+      <label class="block text-xs text-gray-400 mb-1">เลือกวันที่ *</label>
+      <input type="date" id="elec_period_key" class="cyber-input text-sm" value="${bangkokStr}" required>
+    `;
+  } else if (type === 'week') {
+    container.innerHTML = `
+      <label class="block text-xs text-gray-400 mb-1">เลือกสัปดาห์ *</label>
+      <input type="week" id="elec_period_key" class="cyber-input text-sm" required>
+    `;
+  } else if (type === 'month') {
+    container.innerHTML = `
+      <label class="block text-xs text-gray-400 mb-1">เลือกเดือน *</label>
+      <input type="month" id="elec_period_key" class="cyber-input text-sm" value="${currentMonth}" required>
+    `;
+  } else if (type === 'year') {
+    container.innerHTML = `
+      <label class="block text-xs text-gray-400 mb-1">เลือกปี พ.ศ. (ค.ศ.) *</label>
+      <select id="elec_period_key" class="cyber-input text-sm" required></select>
+    `;
+    const yearSelect = document.getElementById('elec_period_key');
+    const currentYear = now.getFullYear();
+    for (let y = currentYear; y >= currentYear - 5; y--) {
+      const opt = document.createElement('option');
+      opt.value = String(y);
+      opt.textContent = `${y + 543} (${y})`;
+      yearSelect.appendChild(opt);
+    }
+  }
+}
+
+function setupElectricityForm() {
+  const form = document.getElementById('electricityForm');
+  if (!form) return;
+
+  onElectricityPeriodTypeChange();
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px"></div>';
+
+    const period_type = document.getElementById('elec_period_type').value;
+    const period_key = document.getElementById('elec_period_key').value;
+    const amount = parseFloat(document.getElementById('elec_amount').value);
+    const note = document.getElementById('elec_note').value;
+
+    try {
+      await apiFetch('/api/admin/electricity-costs', {
+        method: 'POST',
+        body: { period_type, period_key, amount, note }
+      });
+      showToast('บันทึกค่าไฟฟ้าสำเร็จ', 'success');
+      document.getElementById('elec_amount').value = '';
+      document.getElementById('elec_note').value = '';
+      await loadAdminFinance();
+    } catch (err) {
+      showToast(err.error || 'เกิดข้อผิดพลาดในการบันทึกค่าไฟฟ้า', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  });
+}
+
+async function deleteElectricityCostLog(id) {
+  if (!confirm('คุณแน่ใจหรือไม่ที่จะลบรายการค่าไฟฟ้านี้?\nการลบจะทำให้การคำนวณกำไรสุทธิกลับไปเป็นปกติ')) return;
+
+  try {
+    showToast('กำลังลบข้อมูล...', 'info');
+    await apiFetch(`/api/admin/electricity-costs/${id}`, {
+      method: 'DELETE'
+    });
+    showToast('ลบรายการค่าไฟฟ้าสำเร็จ', 'success');
+    await loadAdminFinance();
+  } catch (err) {
+    showToast(err.error || 'เกิดข้อผิดพลาดในการลบรายการ', 'error');
   }
 }

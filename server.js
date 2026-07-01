@@ -1821,6 +1821,353 @@ app.put('/api/admin/settings', authMiddleware, adminMiddleware, async (req, res)
 });
 
 // =============================================
+// ELECTRICITY COSTS & FINANCIAL SUMMARY (Admin only)
+// =============================================
+const ELECTRICITY_COSTS_FILE = path.join(__dirname, 'electricity_costs.json');
+
+async function getElectricityCosts() {
+  // 1. ลองดึงจาก Supabase
+  try {
+    const { data, error } = await supabase
+      .from('electricity_costs')
+      .select('*')
+      .order('period_key', { ascending: false });
+    if (!error && data) {
+      return data.map(item => ({
+        ...item,
+        amount: parseFloat(item.amount || 0)
+      }));
+    }
+  } catch (err) {
+    console.log('Database electricity_costs table not ready, using fallback.');
+  }
+
+  // 2. ดึงจากไฟล์โลคัล
+  try {
+    if (fs.existsSync(ELECTRICITY_COSTS_FILE)) {
+      const content = fs.readFileSync(ELECTRICITY_COSTS_FILE, 'utf8');
+      return JSON.parse(content).map(item => ({
+        ...item,
+        amount: parseFloat(item.amount || 0)
+      }));
+    }
+  } catch (err) {
+    console.error('Error reading electricity_costs.json:', err);
+  }
+  return [];
+}
+
+async function saveElectricityCost({ period_type, period_key, amount, note }) {
+  const numAmount = parseFloat(amount || 0);
+
+  // 1. ลองบันทึกลง Supabase (Upsert)
+  try {
+    const { data, error } = await supabase
+      .from('electricity_costs')
+      .upsert(
+        { period_type, period_key, amount: numAmount, note },
+        { onConflict: 'period_type,period_key' }
+      )
+      .select();
+    if (!error && data && data.length > 0) {
+      return data[0];
+    }
+  } catch (err) {
+    console.log('Database electricity_costs table upsert failed, using local fallback.');
+  }
+
+  // 2. บันทึกลงไฟล์โลคัล
+  try {
+    let list = [];
+    if (fs.existsSync(ELECTRICITY_COSTS_FILE)) {
+      list = JSON.parse(fs.readFileSync(ELECTRICITY_COSTS_FILE, 'utf8'));
+    }
+    // ค้นหาว่ามีรายการเก่าของคาบนี้อยู่แล้วหรือไม่
+    const existingIndex = list.findIndex(x => x.period_type === period_type && x.period_key === period_key);
+    const newRecord = {
+      period_type,
+      period_key,
+      amount: numAmount,
+      note,
+      created_at: new Date().toISOString()
+    };
+
+    if (existingIndex !== -1) {
+      // อัปเดตรายการเดิม
+      newRecord.id = list[existingIndex].id;
+      list[existingIndex] = newRecord;
+    } else {
+      // สร้างรายการใหม่
+      const maxId = list.reduce((max, x) => (x.id > max ? x.id : max), 0);
+      newRecord.id = maxId + 1;
+      list.push(newRecord);
+    }
+
+    fs.writeFileSync(ELECTRICITY_COSTS_FILE, JSON.stringify(list, null, 2), 'utf8');
+    return newRecord;
+  } catch (err) {
+    console.error('Error writing electricity_costs.json:', err);
+    throw new Error('ไม่สามารถบันทึกข้อมูลค่าไฟฟ้าได้');
+  }
+}
+
+async function deleteElectricityCost(id) {
+  const numericId = parseInt(id);
+
+  // 1. ลองลบใน Supabase
+  try {
+    const { error } = await supabase
+      .from('electricity_costs')
+      .delete()
+      .eq('id', id);
+    if (!error) return true;
+  } catch (err) {
+    console.log('Database electricity_costs delete failed, using local fallback.');
+  }
+
+  // 2. ลบในไฟล์โลคัล
+  try {
+    if (fs.existsSync(ELECTRICITY_COSTS_FILE)) {
+      let list = JSON.parse(fs.readFileSync(ELECTRICITY_COSTS_FILE, 'utf8'));
+      const initialLength = list.length;
+      list = list.filter(x => x.id !== numericId);
+      if (list.length !== initialLength) {
+        fs.writeFileSync(ELECTRICITY_COSTS_FILE, JSON.stringify(list, null, 2), 'utf8');
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error('Error deleting from electricity_costs.json:', err);
+  }
+  return false;
+}
+
+// แปรงวันในเวลาของประเทศไทย (UTC+7)
+function getBangkokDateInfo(dateStrOrObj) {
+  const d = new Date(dateStrOrObj);
+  const dateStr = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }); // 'YYYY-MM-DD'
+  const [year, month, day] = dateStr.split('-').map(Number);
+  
+  const localD = new Date(Date.UTC(year, month - 1, day));
+  const dayNum = localD.getUTCDay() || 7;
+  localD.setUTCDate(localD.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(localD.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((localD - yearStart) / 86400000) + 1) / 7);
+  const weekStr = `${localD.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+
+  return {
+    day: dateStr,
+    week: weekStr,
+    month: `${year}-${String(month).padStart(2, '0')}`,
+    year: String(year)
+  };
+}
+
+// ดึงฉลากแสดงผลของสัปดาห์ เช่น "สัปดาห์ที่ 29/06/2026 - 05/07/2026"
+function getWeekRangeLabel(weekStr) {
+  const parts = weekStr.match(/^(\d{4})-W(\d{2})$/);
+  if (!parts) return weekStr;
+  const year = parseInt(parts[1]);
+  const week = parseInt(parts[2]);
+  
+  const simple = new Date(Date.UTC(year, 0, 1 + (week - 1) * 7));
+  const dow = simple.getUTCDay();
+  const ISOweekStart = simple;
+  if (dow <= 4) {
+    ISOweekStart.setUTCDate(simple.getUTCDate() - simple.getUTCDay() + 1);
+  } else {
+    ISOweekStart.setUTCDate(simple.getUTCDate() + 8 - simple.getUTCDay());
+  }
+  
+  const monday = new Date(ISOweekStart);
+  const sunday = new Date(ISOweekStart);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  
+  const format = (d) => {
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const yy = d.getUTCFullYear();
+    return `${dd}/${mm}/${yy}`;
+  };
+  return `สัปดาห์ที่ ${format(monday)} - ${format(sunday)}`;
+}
+
+// แปลงรูปแบบช่วงเวลาเป็นภาษาไทย
+function formatPeriodLabel(type, key) {
+  if (type === 'day') {
+    const [y, m, d] = key.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    return date.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+  if (type === 'week') {
+    return getWeekRangeLabel(key);
+  }
+  if (type === 'month') {
+    const [y, m] = key.split('-').map(Number);
+    const date = new Date(y, m - 1, 1);
+    return date.toLocaleDateString('th-TH', { year: 'numeric', month: 'long' });
+  }
+  if (type === 'year') {
+    return `ปี พ.ศ. ${parseInt(key) + 543}`;
+  }
+  return key;
+}
+
+// GET /api/admin/electricity-costs — ดึงข้อมูลค่าไฟทั้งหมด
+app.get('/api/admin/electricity-costs', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const list = await getElectricityCosts();
+    res.json({ success: true, electricity_costs: list });
+  } catch (err) {
+    res.status(500).json({ error: 'ไม่สามารถดึงข้อมูลค่าไฟได้' });
+  }
+});
+
+// POST /api/admin/electricity-costs — บันทึก/อัปเดตค่าไฟ
+app.post('/api/admin/electricity-costs', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { period_type, period_key, amount, note } = req.body;
+    if (!period_type || !period_key || amount === undefined) {
+      return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
+    }
+    if (!['day', 'week', 'month', 'year'].includes(period_type)) {
+      return res.status(400).json({ error: 'ประเภทช่วงเวลาไม่ถูกต้อง' });
+    }
+    const record = await saveElectricityCost({ period_type, period_key, amount, note });
+    res.json({ success: true, message: 'บันทึกข้อมูลค่าไฟฟ้าสำเร็จ', record });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'เกิดข้อผิดพลาดในการบันทึกค่าไฟ' });
+  }
+});
+
+// DELETE /api/admin/electricity-costs/:id — ลบข้อมูลค่าไฟ
+app.delete('/api/admin/electricity-costs/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const success = await deleteElectricityCost(req.params.id);
+    if (success) {
+      res.json({ success: true, message: 'ลบข้อมูลค่าไฟฟ้าสำเร็จ' });
+    } else {
+      res.status(404).json({ error: 'ไม่พบข้อมูลค่าไฟฟ้าที่ต้องการลบ' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการลบข้อมูลค่าไฟฟ้า' });
+  }
+});
+
+// GET /api/admin/financial-summary — สรุปรายงานการเงินแยกตามรอบเวลา
+app.get('/api/admin/financial-summary', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const [rentalsRes, topupsRes, electricityCosts] = await Promise.all([
+      supabase.from('rentals').select('started_at, total_price, status'),
+      supabase.from('topups').select('created_at, amount, status').eq('status', 'approved'),
+      getElectricityCosts()
+    ]);
+
+    const rentals = rentalsRes.data || [];
+    const topups = topupsRes.data || [];
+
+    const dailyMap = {};
+    const weeklyMap = {};
+    const monthlyMap = {};
+    const yearlyMap = {};
+
+    const initPeriod = (map, key) => {
+      if (!map[key]) {
+        map[key] = { revenue: 0, topups: 0, electricity: 0 };
+      }
+    };
+
+    // 1. จัดกลุ่มยอดรายได้เช่าคอม
+    rentals.forEach(r => {
+      if (!r.started_at) return;
+      const amt = parseFloat(r.total_price || 0);
+      const info = getBangkokDateInfo(r.started_at);
+
+      initPeriod(dailyMap, info.day);
+      dailyMap[info.day].revenue += amt;
+
+      initPeriod(weeklyMap, info.week);
+      weeklyMap[info.week].revenue += amt;
+
+      initPeriod(monthlyMap, info.month);
+      monthlyMap[info.month].revenue += amt;
+
+      initPeriod(yearlyMap, info.year);
+      yearlyMap[info.year].revenue += amt;
+    });
+
+    // 2. จัดกลุ่มยอดเติมเงินที่อนุมัติ
+    topups.forEach(t => {
+      if (!t.created_at) return;
+      const amt = parseFloat(t.amount || 0);
+      const info = getBangkokDateInfo(t.created_at);
+
+      initPeriod(dailyMap, info.day);
+      dailyMap[info.day].topups += amt;
+
+      initPeriod(weeklyMap, info.week);
+      weeklyMap[info.week].topups += amt;
+
+      initPeriod(monthlyMap, info.month);
+      monthlyMap[info.month].topups += amt;
+
+      initPeriod(yearlyMap, info.year);
+      yearlyMap[info.year].topups += amt;
+    });
+
+    // 3. จัดกลุ่มค่าไฟ
+    electricityCosts.forEach(cost => {
+      const type = cost.period_type;
+      const key = cost.period_key;
+      const amt = parseFloat(cost.amount || 0);
+
+      if (type === 'day') {
+        initPeriod(dailyMap, key);
+        dailyMap[key].electricity += amt;
+      } else if (type === 'week') {
+        initPeriod(weeklyMap, key);
+        weeklyMap[key].electricity += amt;
+      } else if (type === 'month') {
+        initPeriod(monthlyMap, key);
+        monthlyMap[key].electricity += amt;
+      } else if (type === 'year') {
+        initPeriod(yearlyMap, key);
+        yearlyMap[key].electricity += amt;
+      }
+    });
+
+    // 4. สรุปคำนวณและเรียงลำดับ
+    const toSortedArray = (map, type) => {
+      return Object.keys(map)
+        .map(key => {
+          const item = map[key];
+          const profit = item.revenue - item.electricity;
+          return {
+            period: key,
+            label: formatPeriodLabel(type, key),
+            revenue: item.revenue,
+            topups: item.topups,
+            electricity: item.electricity,
+            profit: profit
+          };
+        })
+        .sort((a, b) => b.period.localeCompare(a.period));
+    };
+
+    res.json({
+      success: true,
+      daily: toSortedArray(dailyMap, 'day'),
+      weekly: toSortedArray(weeklyMap, 'week'),
+      monthly: toSortedArray(monthlyMap, 'month'),
+      yearly: toSortedArray(yearlyMap, 'year')
+    });
+  } catch (err) {
+    console.error('Financial summary error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงรายงานสรุปการเงิน' });
+  }
+});
+
+// =============================================
 // AUTO-RELEASE: ตรวจสอบเครื่องหมดเวลาอัตโนมัติ
 // =============================================
 async function autoReleaseExpiredMachines() {

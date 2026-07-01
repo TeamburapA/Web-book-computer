@@ -73,6 +73,7 @@
       <button class="tab-btn" onclick="switchAdminTab('topups')" id="tab-topups">💰 ประวัติเติมเงิน</button>
       <button class="tab-btn" onclick="switchAdminTab('users')" id="tab-users">👤 จัดการผู้ใช้</button>
       <button class="tab-btn" onclick="switchAdminTab('settings')" id="tab-settings">⚙️ ตั้งค่าระบบ</button>
+      <button class="tab-btn" onclick="switchAdminTab('finance')" id="tab-finance">📊 สรุปผลการเงิน</button>
     </div>
 
     <!-- Tab Content -->
@@ -131,6 +132,66 @@
           </div>
           <button type="submit" id="settingsFormSubmitBtn" class="btn-neon !py-3 !px-6">💾 บันทึกการตั้งค่า</button>
         </form>
+      </div>
+
+      <!-- FINANCE TAB -->
+      <div id="panel-finance" class="hidden">
+        <h2 class="text-lg font-bold text-white mb-4">📊 รายงานสรุปผลการเงินและค่าไฟฟ้า</h2>
+        
+        <!-- Toggle Buttons for Period Type -->
+        <div class="flex gap-1.5 mb-5 overflow-x-auto pb-1">
+          <button id="btn-period-daily" onclick="toggleFinancePeriod('daily')" class="px-4 py-2 text-xs sm:text-sm bg-yellow-400/10 text-yellow-400 rounded-lg border border-yellow-400/20 hover:bg-yellow-400/20 transition font-medium whitespace-nowrap">รายวัน (Daily)</button>
+          <button id="btn-period-weekly" onclick="toggleFinancePeriod('weekly')" class="px-4 py-2 text-xs sm:text-sm bg-white/5 text-gray-400 rounded-lg border border-white/5 hover:bg-white/10 transition font-medium whitespace-nowrap">รายสัปดาห์ (Weekly)</button>
+          <button id="btn-period-monthly" onclick="toggleFinancePeriod('monthly')" class="px-4 py-2 text-xs sm:text-sm bg-white/5 text-gray-400 rounded-lg border border-white/5 hover:bg-white/10 transition font-medium whitespace-nowrap">รายเดือน (Monthly)</button>
+          <button id="btn-period-yearly" onclick="toggleFinancePeriod('yearly')" class="px-4 py-2 text-xs sm:text-sm bg-white/5 text-gray-400 rounded-lg border border-white/5 hover:bg-white/10 transition font-medium whitespace-nowrap">รายปี (Yearly)</button>
+        </div>
+
+        <!-- Financial Summary Table -->
+        <div class="overflow-x-auto mb-8 border border-white/5 rounded-lg bg-cyber-dark/40" id="financeSummaryContainer">
+          <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 border-t border-white/5 pt-8">
+          <!-- Log Electricity Cost Form -->
+          <div class="lg:col-span-1 bg-cyber-dark/20 p-5 rounded-lg border border-white/5">
+            <h3 class="text-md font-bold text-white mb-4 flex items-center gap-2">🔌 บันทึกค่าไฟฟ้า</h3>
+            <form id="electricityForm" class="space-y-4">
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">ประเภทช่วงเวลา</label>
+                <select id="elec_period_type" onchange="onElectricityPeriodTypeChange()" class="cyber-input text-sm" required>
+                  <option value="day" selected>รายวัน (Daily)</option>
+                  <option value="week">รายสัปดาห์ (Weekly)</option>
+                  <option value="month">รายเดือน (Monthly)</option>
+                  <option value="year">รายปี (Yearly)</option>
+                </select>
+              </div>
+              
+              <div id="elec_period_key_container">
+                <!-- Dynamic Input will be inserted here by JS -->
+              </div>
+              
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">จำนวนเงิน (บาท) *</label>
+                <input id="elec_amount" type="number" step="0.01" min="0" class="cyber-input text-sm" placeholder="0.00" required>
+              </div>
+              
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">หมายเหตุ (เช่น ค่าไฟโซน A)</label>
+                <input id="elec_note" type="text" class="cyber-input text-sm" placeholder="เช่น บิลเดือน มิ.ย., ค่าไฟเครื่องขุด">
+              </div>
+              
+              <button type="submit" class="btn-neon w-full !py-2 text-sm">💾 บันทึกค่าไฟฟ้า</button>
+            </form>
+          </div>
+
+          <!-- Electricity Cost Logs -->
+          <div class="lg:col-span-2">
+            <h3 class="text-md font-bold text-white mb-4">📜 ประวัติการบันทึกค่าไฟฟ้า</h3>
+            <div class="overflow-x-auto max-h-96 border border-white/5 rounded-lg" id="electricityLogsContainer">
+              <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </main>

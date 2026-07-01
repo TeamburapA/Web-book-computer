@@ -79,20 +79,95 @@
       <p class="text-gray-500 text-sm mb-8">อัปโหลดสลิปโอนเงิน — ระบบจะตรวจสอบและเติมเครดิตให้อัตโนมัติ</p>
 
       <!-- Tabs for Topup Methods -->
-      <div class="flex gap-2 mb-6 border-b border-white/5 pb-3">
-        <button id="method-promptpay" onclick="switchTopupMethod('promptpay')" class="px-4 py-2.5 text-sm font-semibold border-b-2 text-yellow-400 border-yellow-400 focus:outline-none transition">
-          💳 โอนเงินผ่านธนาคาร (PromptPay)
+      <div class="flex gap-2 mb-6 border-b border-white/5 pb-3" id="topupTabsContainer">
+        <button id="method-promptpay-auto" onclick="switchTopupMethod('promptpay-auto')" class="px-4 py-2.5 text-sm font-semibold border-b-2 text-yellow-400 border-yellow-400 focus:outline-none transition">
+          💳 สแกนจ่ายอัตโนมัติ (PromptPay Auto)
+        </button>
+        <button id="method-promptpay-slip" onclick="switchTopupMethod('promptpay-slip')" class="px-4 py-2.5 text-sm font-semibold border-b-2 text-gray-500 border-transparent hover:text-white focus:outline-none transition">
+          🧾 อัปโหลดสลิปโอนเงิน (EasySlip)
         </button>
         <button id="method-truemoney" onclick="switchTopupMethod('truemoney')" class="px-4 py-2.5 text-sm font-semibold border-b-2 text-gray-500 border-transparent hover:text-white focus:outline-none transition">
           🧧 ซองของขวัญ TrueMoney Wallet
         </button>
       </div>
 
-      <!-- PromptPay Method Panel -->
-      <div id="panel-promptpay" class="grid md:grid-cols-2 gap-8">
+      <!-- PromptPay Auto Method Panel -->
+      <div id="panel-promptpay-auto" class="hidden max-w-xl mx-auto">
+        <div class="cyber-card p-6">
+          <div class="flex items-center gap-3 mb-6">
+            <span class="text-3xl">💳</span>
+            <div>
+              <h2 class="text-lg font-bold text-white">เติมเงินอัตโนมัติ (PromptPay Auto QR)</h2>
+              <p class="text-xs text-gray-500 mt-0.5">สแกนชำระเงินตามจำนวนจริง — เครดิตเข้าทันทีไม่ต้องส่งสลิป</p>
+            </div>
+          </div>
+
+          <!-- Step 1: Input Amount -->
+          <div id="pp-auto-input-step" class="space-y-6">
+            <div>
+              <label class="block text-sm text-gray-400 mb-2">จำนวนเงินที่ต้องการเติม (บาท)</label>
+              <input id="ppAutoAmountInput" type="number" min="1" step="1" class="cyber-input !py-3 !text-xl text-center font-bold text-yellow-400 placeholder-gray-600" placeholder="ระบุจำนวนเงิน ฿" required>
+            </div>
+            
+            <!-- Quick Select Buttons -->
+            <div class="grid grid-cols-5 gap-2">
+              <button type="button" onclick="setPpAutoAmount(50)" class="px-2 py-2 text-xs sm:text-sm font-semibold bg-white/5 hover:bg-yellow-400/10 hover:text-yellow-400 text-gray-400 border border-white/5 hover:border-yellow-400/30 rounded-lg transition focus:outline-none">50</button>
+              <button type="button" onclick="setPpAutoAmount(100)" class="px-2 py-2 text-xs sm:text-sm font-semibold bg-white/5 hover:bg-yellow-400/10 hover:text-yellow-400 text-gray-400 border border-white/5 hover:border-yellow-400/30 rounded-lg transition focus:outline-none">100</button>
+              <button type="button" onclick="setPpAutoAmount(300)" class="px-2 py-2 text-xs sm:text-sm font-semibold bg-white/5 hover:bg-yellow-400/10 hover:text-yellow-400 text-gray-400 border border-white/5 hover:border-yellow-400/30 rounded-lg transition focus:outline-none">300</button>
+              <button type="button" onclick="setPpAutoAmount(500)" class="px-2 py-2 text-xs sm:text-sm font-semibold bg-white/5 hover:bg-yellow-400/10 hover:text-yellow-400 text-gray-400 border border-white/5 hover:border-yellow-400/30 rounded-lg transition focus:outline-none">500</button>
+              <button type="button" onclick="setPpAutoAmount(1000)" class="px-2 py-2 text-xs sm:text-sm font-semibold bg-white/5 hover:bg-yellow-400/10 hover:text-yellow-400 text-gray-400 border border-white/5 hover:border-yellow-400/30 rounded-lg transition focus:outline-none">1,000</button>
+            </div>
+
+            <button onclick="generatePromptPayQR()" id="generateQrBtn" class="btn-neon w-full !py-3.5">
+              ⚡ สร้าง QR Code ชำระเงิน
+            </button>
+          </div>
+
+          <!-- Step 2: Show QR & Poll -->
+          <div id="pp-auto-qr-step" class="hidden text-center space-y-6">
+            <div class="bg-white rounded-2xl p-2 mx-auto w-full max-w-[280px] aspect-square flex items-center justify-center shadow-inner overflow-hidden">
+              <img id="ppAutoQRImage" src="" alt="QR PromptPay Auto" class="w-full h-full object-contain">
+            </div>
+
+            <div class="p-3 bg-white/5 rounded-lg border border-white/5 space-y-1.5 text-sm max-w-sm mx-auto">
+              <div class="flex justify-between">
+                <span class="text-gray-400">ยอดชำระเงิน</span>
+                <span class="text-yellow-400 font-bold" id="ppAutoShowAmount">฿ 0.00</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-400">รหัสอ้างอิง (Ref)</span>
+                <span class="text-white font-mono" id="ppAutoShowRef">-</span>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-center gap-3 text-sm text-yellow-400/80">
+              <div class="spinner !border-yellow-400/30 !border-t-yellow-400" style="width:18px;height:18px;border-width:2px"></div>
+              <span>ระบบกำลังตรวจจับยอดโอนเงินอัตโนมัติ...</span>
+            </div>
+
+            <p class="text-xs text-gray-500">กรุณาสแกนจ่ายตามยอดเงินด้านบนให้ถูกต้อง หลังจากโอนเงินเสร็จแล้ว เครดิตในระบบจะถูกบวกให้อัตโนมัติในไม่กี่วินาที</p>
+
+            <button onclick="cancelPromptPayQR()" class="px-4 py-2 bg-white/5 hover:bg-white/10 text-gray-400 border border-white/5 rounded-lg text-xs font-semibold transition focus:outline-none">
+              ❌ ยกเลิกและกลับไปกรอกยอดเงิน
+            </button>
+          </div>
+          
+          <!-- Auto PP Result -->
+          <div id="ppAutoResult" class="hidden mt-4"></div>
+
+          <!-- Current Credit inside Auto PP panel -->
+          <div class="mt-6 p-3 bg-white/5 rounded-lg flex justify-between items-center">
+            <span class="text-gray-400 text-sm">เครดิตปัจจุบัน</span>
+            <span class="neon-text-yellow font-bold text-lg" id="currentCreditPpAuto">฿ 0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- PromptPay Slip Method Panel -->
+      <div id="panel-promptpay-slip" class="hidden grid md:grid-cols-2 gap-8">
         <!-- QR Code / ข้อมูลโอนเงิน -->
         <div class="cyber-card p-6">
-          <h2 class="text-lg font-bold text-white mb-4">📱 ข้อมูลการโอนเงิน</h2>
+          <h2 class="text-lg font-bold text-white mb-4">📱 ข้อมูลการโอนเงิน (ตรวจสลิป)</h2>
 
           <!-- QR Code Placeholder -->
           <div class="bg-white rounded-2xl p-2 mx-auto w-full max-w-[380px] aspect-square flex items-center justify-center mb-8 shadow-inner overflow-hidden">

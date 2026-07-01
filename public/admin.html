@@ -130,6 +130,23 @@
             <label class="block text-sm text-gray-400 mb-1">เบอร์ TrueMoney Wallet ของแอดมิน (สำหรับรับเงินจากซองของขวัญ)</label>
             <input id="setting_truemoney_phone" type="text" class="cyber-input" placeholder="เช่น 0891234567" pattern="[0-9]{10}">
           </div>
+          <div>
+            <label class="block text-sm text-gray-400 mb-2">🔌 เปิด/ปิดระบบเติมเงิน</label>
+            <div class="space-y-3 bg-white/5 p-4 rounded-lg border border-white/5">
+              <label class="flex items-center text-white cursor-pointer select-none">
+                <input id="setting_topup_promptpay_enabled" type="checkbox" class="w-4 h-4 rounded border-gray-700 bg-gray-800 text-yellow-400 focus:ring-yellow-400/20 mr-2">
+                <span class="text-sm font-semibold">💳 เปิดเติมเงินผ่าน PromptPay Auto (inwcloud)</span>
+              </label>
+              <label class="flex items-center text-white cursor-pointer select-none">
+                <input id="setting_topup_wallet_enabled" type="checkbox" class="w-4 h-4 rounded border-gray-700 bg-gray-800 text-yellow-400 focus:ring-yellow-400/20 mr-2">
+                <span class="text-sm font-semibold">🧧 เปิดเติมเงินผ่าน TrueMoney Wallet (ซองของขวัญ)</span>
+              </label>
+              <label class="flex items-center text-white cursor-pointer select-none">
+                <input id="setting_topup_slip_enabled" type="checkbox" class="w-4 h-4 rounded border-gray-700 bg-gray-800 text-yellow-400 focus:ring-yellow-400/20 mr-2">
+                <span class="text-sm font-semibold">🧾 เปิดเติมเงินผ่านการ ตรวจสลิปโอนเงิน (อัปโหลดรูป)</span>
+              </label>
+            </div>
+          </div>
           <button type="submit" id="settingsFormSubmitBtn" class="btn-neon !py-3 !px-6">💾 บันทึกการตั้งค่า</button>
         </form>
       </div>

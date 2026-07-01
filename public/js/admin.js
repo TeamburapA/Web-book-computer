@@ -629,9 +629,18 @@ async function loadAdminSettings() {
     const fbInput = document.getElementById('setting_facebook_url');
     const dcInput = document.getElementById('setting_discord_url');
     const tmInput = document.getElementById('setting_truemoney_phone');
+    
+    const walletCheckbox = document.getElementById('setting_topup_wallet_enabled');
+    const promptPayCheckbox = document.getElementById('setting_topup_promptpay_enabled');
+    const slipCheckbox = document.getElementById('setting_topup_slip_enabled');
+
     if (fbInput) fbInput.value = data.facebook_url || '';
     if (dcInput) dcInput.value = data.discord_url || '';
     if (tmInput) tmInput.value = data.truemoney_phone || '';
+    
+    if (walletCheckbox) walletCheckbox.checked = data.topup_wallet_enabled === 'true';
+    if (promptPayCheckbox) promptPayCheckbox.checked = data.topup_promptpay_enabled === 'true';
+    if (slipCheckbox) slipCheckbox.checked = data.topup_slip_enabled === 'true';
   } catch (err) {
     console.error('Error loading settings:', err);
   }
@@ -650,11 +659,26 @@ function setupSettingsForm() {
     const facebook_url = document.getElementById('setting_facebook_url').value;
     const discord_url = document.getElementById('setting_discord_url').value;
     const truemoney_phone = document.getElementById('setting_truemoney_phone').value;
+    
+    const walletCheckbox = document.getElementById('setting_topup_wallet_enabled');
+    const promptPayCheckbox = document.getElementById('setting_topup_promptpay_enabled');
+    const slipCheckbox = document.getElementById('setting_topup_slip_enabled');
+    
+    const topup_wallet_enabled = walletCheckbox && walletCheckbox.checked ? 'true' : 'false';
+    const topup_promptpay_enabled = promptPayCheckbox && promptPayCheckbox.checked ? 'true' : 'false';
+    const topup_slip_enabled = slipCheckbox && slipCheckbox.checked ? 'true' : 'false';
 
     try {
       await apiFetch('/api/admin/settings', {
         method: 'PUT',
-        body: { facebook_url, discord_url, truemoney_phone }
+        body: {
+          facebook_url,
+          discord_url,
+          truemoney_phone,
+          topup_wallet_enabled,
+          topup_promptpay_enabled,
+          topup_slip_enabled
+        }
       });
       showToast('บันทึกการตั้งค่าสำเร็จ', 'success');
     } catch (err) {

@@ -1,8 +1,8 @@
 {
-  "facebook_url": "https://www.google.com/?zx=1781775253981",
+  "facebook_url": "https://www.facebook.com/share/1DEVD885dP/",
   "discord_url": "https://discord.gg/fUu8aENZr",
-  "truemoney_phone": "0957537488",
-  "outage_start_machine_5": "2026-06-24T17:54:21.033Z",
-  "outage_machine_5": "false",
-  "outage_machine_12": "false"
+  "truemoney_phone": "0648964600",
+  "topup_wallet_enabled": "false",
+  "topup_promptpay_enabled": "true",
+  "topup_slip_enabled": "false"
 }

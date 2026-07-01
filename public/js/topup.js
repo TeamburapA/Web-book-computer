@@ -3,6 +3,8 @@
 // =============================================
 
 let selectedSlipFile = null;
+let settings = null;
+let pollingInterval = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   initTopup();
@@ -22,6 +24,54 @@ async function initTopup() {
   loadCurrentCredit();
   loadTopupHistory();
   setupDragDrop();
+
+  // ดึงค่าตั้งค่าเพื่อเปิด/ปิดช่องทางต่างๆ
+  try {
+    settings = await apiFetch('/api/settings');
+    applyTopupSettings();
+  } catch (err) {
+    console.error('Failed to load settings:', err);
+  }
+}
+
+function applyTopupSettings() {
+  if (!settings) return;
+
+  const promptpayAutoBtn = document.getElementById('method-promptpay-auto');
+  const promptpaySlipBtn = document.getElementById('method-promptpay-slip');
+  const truemoneyBtn = document.getElementById('method-truemoney');
+
+  const autoEnabled = settings.topup_promptpay_enabled === 'true';
+  const slipEnabled = settings.topup_slip_enabled === 'true';
+  const walletEnabled = settings.topup_wallet_enabled === 'true';
+
+  if (promptpayAutoBtn) promptpayAutoBtn.classList.toggle('hidden', !autoEnabled);
+  if (promptpaySlipBtn) promptpaySlipBtn.classList.toggle('hidden', !slipEnabled);
+  if (truemoneyBtn) truemoneyBtn.classList.toggle('hidden', !walletEnabled);
+
+  // กำหนดแท็บแรกเริ่มที่เปิดใช้งาน
+  let activeTab = null;
+  if (autoEnabled) {
+    activeTab = 'promptpay-auto';
+  } else if (slipEnabled) {
+    activeTab = 'promptpay-slip';
+  } else if (walletEnabled) {
+    activeTab = 'truemoney';
+  }
+
+  if (activeTab) {
+    switchTopupMethod(activeTab);
+  } else {
+    // กรณีปิดหมดทุกช่องทาง
+    const container = document.getElementById('topupTabsContainer');
+    if (container) {
+      container.innerHTML = `
+        <div class="p-4 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-center w-full">
+          ⚠️ ช่องทางการเติมเงินทั้งหมดปิดปรับปรุงชั่วคราว กรุณาติดต่อแอดมิน
+        </div>
+      `;
+    }
+  }
 }
 
 // ถ้า login สำเร็จจากหน้า topup ให้ reload
@@ -42,8 +92,10 @@ async function loadCurrentCredit() {
     const creditText = `฿ ${formatCurrency(data.user.credit)}`;
     const mainCredit = document.getElementById('currentCredit');
     const tmCredit = document.getElementById('currentCreditTrueMoney');
+    const ppAutoCredit = document.getElementById('currentCreditPpAuto');
     if (mainCredit) mainCredit.textContent = creditText;
     if (tmCredit) tmCredit.textContent = creditText;
+    if (ppAutoCredit) ppAutoCredit.textContent = creditText;
   } catch (err) { /* ignore */ }
 }
 
@@ -205,29 +257,176 @@ async function loadTopupHistory() {
   }
 }
 
+// --- ฟังก์ชันอัปเดตสถานะปุ่มแท็บโดยไม่กระทบต่อ class 'hidden' ---
+function updateTabButtonState(btn, isActive) {
+  if (!btn) return;
+  if (isActive) {
+    btn.classList.add('text-yellow-400', 'border-yellow-400');
+    btn.classList.remove('text-gray-500', 'border-transparent', 'hover:text-white');
+  } else {
+    btn.classList.remove('text-yellow-400', 'border-yellow-400');
+    btn.classList.add('text-gray-500', 'border-transparent', 'hover:text-white');
+  }
+}
+
 // --- สลับช่องทางการเติมเงิน ---
 function switchTopupMethod(method) {
-  const isPromptPay = method === 'promptpay';
-  
-  // Toggle panels
-  document.getElementById('panel-promptpay').classList.toggle('hidden', !isPromptPay);
-  document.getElementById('panel-truemoney').classList.toggle('hidden', isPromptPay);
-  
-  // Toggle tab buttons styles
-  const btnPp = document.getElementById('method-promptpay');
-  const btnTm = document.getElementById('method-truemoney');
-  
-  if (isPromptPay) {
-    btnPp.className = 'px-4 py-2.5 text-sm font-semibold border-b-2 text-yellow-400 border-yellow-400 focus:outline-none transition';
-    btnTm.className = 'px-4 py-2.5 text-sm font-semibold border-b-2 text-gray-500 border-transparent hover:text-white focus:outline-none transition';
-  } else {
-    btnPp.className = 'px-4 py-2.5 text-sm font-semibold border-b-2 text-gray-500 border-transparent hover:text-white focus:outline-none transition';
-    btnTm.className = 'px-4 py-2.5 text-sm font-semibold border-b-2 text-yellow-400 border-yellow-400 focus:outline-none transition';
+  // เคลียร์การเช็กสถานะการจ่ายเงิน (Polling) หากมีการเปลี่ยนแท็บ
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
   }
 
-  // Clear results
-  document.getElementById('slipResult').classList.add('hidden');
-  document.getElementById('angpaoResult').classList.add('hidden');
+  const isAuto = method === 'promptpay-auto';
+  const isSlip = method === 'promptpay-slip';
+  const isTm = method === 'truemoney';
+  
+  // จัดการการแสดงผลแผงหน้าจอเติมเงิน (Panels)
+  const panelAuto = document.getElementById('panel-promptpay-auto');
+  const panelSlip = document.getElementById('panel-promptpay-slip');
+  const panelTm = document.getElementById('panel-truemoney');
+
+  if (panelAuto) panelAuto.classList.toggle('hidden', !isAuto);
+  if (panelSlip) panelSlip.classList.toggle('hidden', !isSlip);
+  if (panelTm) panelTm.classList.toggle('hidden', !isTm);
+  
+  // จัดการการแสดงผลปุ่มสลับแท็บ (Tab Buttons Styling)
+  const btnAuto = document.getElementById('method-promptpay-auto');
+  const btnSlip = document.getElementById('method-promptpay-slip');
+  const btnTm = document.getElementById('method-truemoney');
+  
+  updateTabButtonState(btnAuto, isAuto);
+  updateTabButtonState(btnSlip, isSlip);
+  updateTabButtonState(btnTm, isTm);
+
+  // เคลียร์ผลลัพธ์ค้างเก่า
+  const slipResult = document.getElementById('slipResult');
+  const angpaoResult = document.getElementById('angpaoResult');
+  const ppAutoResult = document.getElementById('ppAutoResult');
+
+  if (slipResult) slipResult.classList.add('hidden');
+  if (angpaoResult) angpaoResult.classList.add('hidden');
+  if (ppAutoResult) ppAutoResult.classList.add('hidden');
+
+  // รีเซ็ตการแสดงผล PromptPay Auto กลับไปขั้นตอนกรอกยอดเงินเริ่มต้น
+  cancelPromptPayQR();
+}
+
+// --- ฟังก์ชันช่วยเหลือเกี่ยวกับ PromptPay Auto ---
+function setPpAutoAmount(val) {
+  const input = document.getElementById('ppAutoAmountInput');
+  if (input) input.value = val;
+}
+
+async function generatePromptPayQR() {
+  if (!requireLogin()) return;
+
+  const amountInput = document.getElementById('ppAutoAmountInput');
+  const amount = parseFloat(amountInput.value);
+  if (isNaN(amount) || amount <= 0) {
+    showToast('กรุณาระบุจำนวนเงินที่ต้องการเติม (มากกว่า 0 บาท)', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('generateQrBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px"></div>';
+
+  try {
+    const data = await apiFetch('/api/topup/promptpay/generate', {
+      method: 'POST',
+      body: { amount }
+    });
+
+    if (data.success) {
+      // สลับไปแสดงรูปภาพ QR และซ่อนฟอร์มกรอกจำนวนเงิน
+      document.getElementById('pp-auto-input-step').classList.add('hidden');
+      document.getElementById('pp-auto-qr-step').classList.remove('hidden');
+
+      const qrImg = document.getElementById('ppAutoQRImage');
+      if (qrImg) qrImg.src = data.qr_url;
+
+      const showAmt = document.getElementById('ppAutoShowAmount');
+      if (showAmt) showAmt.textContent = `฿ ${formatCurrency(data.amount)}`;
+
+      const showRef = document.getElementById('ppAutoShowRef');
+      if (showRef) showRef.textContent = data.reference;
+
+      // เริ่มต้นดึงข้อมูลสถานะการโอนเงิน
+      startPollingStatus(data.reference);
+    }
+  } catch (err) {
+    showToast(err.error || 'เกิดข้อผิดพลาดในการสร้าง QR Code', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ สร้าง QR Code ชำระเงิน';
+  }
+}
+
+function startPollingStatus(ref) {
+  if (pollingInterval) clearInterval(pollingInterval);
+
+  pollingInterval = setInterval(async () => {
+    try {
+      const data = await apiFetch(`/api/topup/promptpay/status/${ref}`);
+      if (data.success && data.status === 'approved') {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+
+        // แสดงกล่องสำเร็จ
+        const resultDiv = document.getElementById('ppAutoResult');
+        resultDiv.classList.remove('hidden');
+        resultDiv.innerHTML = `
+          <div class="p-4 rounded-lg bg-green-500/10 border border-green-500/30 text-center">
+            <div class="flex items-center justify-center gap-2 mb-2">
+              <span class="text-xl">✅</span>
+              <span class="text-green-400 font-bold">เติมเงินสำเร็จ ฿ ${formatCurrency(data.amount)} บาท</span>
+            </div>
+            <p class="text-gray-400 text-xs">ระบบตรวจสอบพบยอดเงินโอนเรียบร้อยแล้ว เครดิตได้รับการบวกเข้าบัญชีเรียบร้อย</p>
+          </div>
+        `;
+
+        // โหลดข้อมูลเครดิตใหม่
+        loadCurrentCredit();
+
+        // รีเฟรชข้อมูล User Cache ฝั่งหน้าบ้าน
+        const user = getCachedUser();
+        if (user) {
+          const freshMe = await apiFetch('/api/me');
+          user.credit = freshMe.user.credit;
+          setCachedUser(user);
+          updateNavbar(user);
+        }
+
+        // โหลดประวัติการเติมเงินใหม่
+        loadTopupHistory();
+
+        // ไปที่สถานะเดิมหลังจาก 4 วินาที
+        setTimeout(() => {
+          cancelPromptPayQR();
+        }, 4000);
+      }
+    } catch (err) {
+      console.error('Polling status error:', err);
+    }
+  }, 3000); // เช็กสถานะการโอนทุกๆ 3 วินาที
+}
+
+function cancelPromptPayQR() {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+  }
+
+  const inputStep = document.getElementById('pp-auto-input-step');
+  const qrStep = document.getElementById('pp-auto-qr-step');
+  const resultDiv = document.getElementById('ppAutoResult');
+  const amountInput = document.getElementById('ppAutoAmountInput');
+
+  if (inputStep) inputStep.classList.remove('hidden');
+  if (qrStep) qrStep.classList.add('hidden');
+  if (resultDiv) resultDiv.classList.add('hidden');
+  if (amountInput) amountInput.value = '';
 }
 
 // --- ส่งซองของขวัญตรวจสอบ ---

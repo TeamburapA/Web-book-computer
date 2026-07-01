@@ -882,6 +882,11 @@ app.post('/api/release/:machineId', authMiddleware, async (req, res) => {
 // POST /api/verify-slip — ตรวจสอบสลิปและเติมเครดิต
 app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, res) => {
   try {
+    const settings = await getSettings();
+    if (settings.topup_slip_enabled !== 'true') {
+      return res.status(400).json({ error: 'ช่องทางเติมเงินผ่านสลิปธนาคารถูกปิดใช้งานชั่วคราว' });
+    }
+
     if (!req.file) {
       return res.status(400).json({ error: 'กรุณาอัปโหลดรูปสลิปโอนเงิน' });
     }
@@ -1057,6 +1062,9 @@ app.post('/api/verify-angpao', authMiddleware, async (req, res) => {
 
     // ตรวจสอบเบอร์ TrueMoney ของแอดมินจากระบบตั้งค่า
     const settings = await getSettings();
+    if (settings.topup_wallet_enabled !== 'true') {
+      return res.status(400).json({ error: 'ช่องทางเติมเงินผ่านซองของขวัญ TrueMoney ถูกปิดใช้งานชั่วคราว' });
+    }
     const adminPhone = settings.truemoney_phone ? settings.truemoney_phone.trim() : '';
     if (!adminPhone) {
       return res.status(400).json({ error: 'ระบบเติมเงินผ่านซองของขวัญยังไม่เปิดใช้งาน (แอดมินยังไม่ได้ตั้งค่าเบอร์รับเงิน)' });
@@ -1128,6 +1136,199 @@ app.post('/api/verify-angpao', authMiddleware, async (req, res) => {
   }
 });
 
+// =============================================
+// PROMPTPAY AUTO TOPUP (inwcloud API)
+// =============================================
+
+// ฟังก์ชันสกัดจำนวนเงินจริงที่มีการใส่ทศนิยมสุ่มจากข้อมูล EMVCo Payload
+function extractAmountFromEMVCo(payload) {
+  if (!payload || typeof payload !== 'string') return null;
+  let index = 0;
+  while (index < payload.length) {
+    if (index + 4 > payload.length) break;
+    const tag = payload.substring(index, index + 2);
+    const lengthVal = parseInt(payload.substring(index + 2, index + 4), 10);
+    if (isNaN(lengthVal)) break;
+    
+    const value = payload.substring(index + 4, index + 4 + lengthVal);
+    if (tag === '54') {
+      const parsedAmount = parseFloat(value);
+      if (!isNaN(parsedAmount)) {
+        return parsedAmount;
+      }
+    }
+    index += 4 + lengthVal;
+  }
+  return null;
+}
+
+// POST /api/topup/promptpay/generate — สร้าง QR Code ชำระเงินผ่าน inwcloud
+app.post('/api/topup/promptpay/generate', authMiddleware, async (req, res) => {
+  try {
+    const settings = await getSettings();
+    if (settings.topup_promptpay_enabled !== 'true') {
+      return res.status(400).json({ error: 'ช่องทางเติมเงินผ่าน PromptPay Auto ปิดใช้งานชั่วคราว' });
+    }
+
+    const { amount } = req.body;
+    const topupAmount = parseFloat(amount);
+    if (isNaN(topupAmount) || topupAmount <= 0) {
+      return res.status(400).json({ error: 'กรุณาระบุจำนวนเงินที่ต้องการเติม (ต้องมากกว่า 0 บาท)' });
+    }
+
+    const apiKey = process.env.INWCLOUD_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'ระบบเติมเงินอัตโนมัติยังไม่พร้อมใช้งาน (ติดต่อแอดมิน)' });
+    }
+
+    // สร้างหมายเลขอ้างอิงรายการเติมเงินที่ไม่ซ้ำกัน
+    const reference = `PP-${Date.now()}-${req.user.id}`;
+
+    // ส่งคำขอสร้าง QR code ไปที่ API inwcloud.shop
+    const response = await fetch('https://api.inwcloud.shop/v1/promptpay/generate', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        amount: topupAmount,
+        reference: reference
+      })
+    });
+
+    const result = await response.json();
+    if (!response.ok || result.status !== 'success') {
+      const errMsg = result.message || 'ไม่สามารถเจเนอเรต QR Code จาก API ผู้ให้บริการได้';
+      return res.status(400).json({ error: errMsg });
+    }
+
+    // ตรวจหาจำนวนเงินจริงที่ถูกแปลงทศนิยมสุ่มใน payload ของ QR Code
+    let finalAmount = topupAmount;
+    if (result.data && result.data.payload) {
+      const extracted = extractAmountFromEMVCo(result.data.payload);
+      if (extracted !== null) {
+        finalAmount = extracted;
+        console.log(`Parsed randomized amount from payload: Original=฿${topupAmount}, Actual=฿${finalAmount}`);
+      }
+    }
+
+    // บันทึกรายการเติมเงินเริ่มต้นเป็น pending ลงในตาราง topups
+    await supabase.from('topups').insert({
+      user_id: req.user.id,
+      amount: finalAmount,
+      transaction_ref: reference,
+      status: 'pending',
+      note: 'รอสแกนชำระเงินผ่าน PromptPay Auto (inwcloud)',
+      slip_data: result.data || {}
+    });
+
+    res.json({
+      success: true,
+      qr_url: result.data ? result.data.qr_url : '',
+      reference: reference,
+      amount: finalAmount
+    });
+
+  } catch (err) {
+    console.error('Generate PromptPay QR error:', err);
+    res.status(500).json({ error: `เกิดข้อผิดพลาดในการสร้าง QR Code: ${err.message}` });
+  }
+});
+
+// POST /api/webhook/inwcloud — Callback/Webhook แจ้งเงินเข้าจาก inwcloud.shop
+app.post('/api/webhook/inwcloud', async (req, res) => {
+  try {
+    console.log('Received inwcloud webhook payload:', req.body);
+    
+    // ดึงค่าอ้างอิงและยอดเงินจาก request body
+    const ref = req.body.reference || req.body.ref || req.body.reference_no;
+    const amountVal = req.body.amount;
+    
+    if (!ref) {
+      return res.status(400).json({ error: 'Missing reference' });
+    }
+
+    // ค้นหารายการเติมเงินที่สถานะเป็น pending
+    const { data: topup, error } = await supabase
+      .from('topups')
+      .select('*')
+      .eq('transaction_ref', ref)
+      .eq('status', 'pending')
+      .single();
+
+    if (error || !topup) {
+      console.warn(`Webhook: Transaction reference ${ref} not found or already approved`);
+      return res.status(404).json({ error: 'Transaction reference not found or already approved' });
+    }
+
+    const topupAmount = parseFloat(amountVal || topup.amount);
+
+    // ดึงเครดิตปัจจุบันของผู้ใช้
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('credit')
+      .eq('id', topup.user_id)
+      .single();
+
+    if (userError || !user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // บวกเงินเพิ่มให้ผู้ใช้
+    const newCredit = parseFloat(user.credit) + topupAmount;
+    await supabase
+      .from('users')
+      .update({ credit: newCredit })
+      .eq('id', topup.user_id);
+
+    // อัปเดตสถานะของตาราง topups เป็น approved
+    await supabase
+      .from('topups')
+      .update({
+        status: 'approved',
+        note: 'ชำระเงินสำเร็จผ่าน PromptPay Auto (inwcloud)',
+        slip_data: req.body
+      })
+      .eq('id', topup.id);
+
+    console.log(`Successfully credited user ${topup.user_id} with ฿${topupAmount}`);
+
+    res.json({ success: true, message: 'Webhook processed and user credited' });
+
+  } catch (err) {
+    console.error('Webhook error:', err);
+    res.status(500).json({ error: `Internal server error: ${err.message}` });
+  }
+});
+
+// GET /api/topup/promptpay/status/:ref — ตรวจสอบสถานะการเติมเงินฝั่งลูกค้าระหว่างรอ Webhook
+app.get('/api/topup/promptpay/status/:ref', authMiddleware, async (req, res) => {
+  try {
+    const { ref } = req.params;
+    const { data: topup, error } = await supabase
+      .from('topups')
+      .select('status, amount')
+      .eq('transaction_ref', ref)
+      .eq('user_id', req.user.id)
+      .single();
+
+    if (error || !topup) {
+      return res.status(404).json({ error: 'ไม่พบรายการอ้างอิงนี้' });
+    }
+
+    res.json({
+      success: true,
+      status: topup.status,
+      amount: topup.amount
+    });
+
+  } catch (err) {
+    console.error('Get transaction status error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลสถานะ' });
+  }
+});
+
 // GET /api/my-topups — ประวัติเติมเงินของผู้ใช้
 app.get('/api/my-topups', authMiddleware, async (req, res) => {
   try {
@@ -1196,7 +1397,10 @@ const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 const defaultSettings = {
   facebook_url: 'https://facebook.com',
   discord_url: 'https://discord.com',
-  truemoney_phone: ''
+  truemoney_phone: '',
+  topup_wallet_enabled: 'true',
+  topup_promptpay_enabled: 'true',
+  topup_slip_enabled: 'true'
 };
 
 async function getSettings() {
@@ -1762,11 +1966,18 @@ app.put('/api/admin/users/:id/credit', authMiddleware, adminMiddleware, async (r
 // PUT /api/admin/settings — แก้ไขลิ้งก์ติดต่อ (Admin only)
 app.put('/api/admin/settings', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { facebook_url, discord_url, truemoney_phone } = req.body;
+    const { facebook_url, discord_url, truemoney_phone, topup_wallet_enabled, topup_promptpay_enabled, topup_slip_enabled } = req.body;
     if (!facebook_url || !discord_url) {
       return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
     }
-    await updateSettings({ facebook_url, discord_url, truemoney_phone: truemoney_phone || '' });
+    await updateSettings({
+      facebook_url,
+      discord_url,
+      truemoney_phone: truemoney_phone || '',
+      topup_wallet_enabled: topup_wallet_enabled || 'true',
+      topup_promptpay_enabled: topup_promptpay_enabled || 'true',
+      topup_slip_enabled: topup_slip_enabled || 'true'
+    });
     res.json({ success: true, message: 'บันทึกการตั้งค่าสำเร็จ' });
   } catch (err) {
     console.error('Update settings error:', err);

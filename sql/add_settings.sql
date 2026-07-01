@@ -11,5 +11,8 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT INTO settings (key, value) VALUES
 ('facebook_url', 'https://facebook.com'),
 ('discord_url', 'https://discord.com'),
-('truemoney_phone', '')
+('truemoney_phone', ''),
+('topup_wallet_enabled', 'true'),
+('topup_promptpay_enabled', 'true'),
+('topup_slip_enabled', 'true')
 ON CONFLICT (key) DO NOTHING;

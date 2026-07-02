@@ -37,6 +37,56 @@ async function initTopup() {
 function applyTopupSettings() {
   if (!settings) return;
 
+  const isRestricted = isTopupTimeRestricted(settings);
+  const banner = document.getElementById('timeRestrictionBanner');
+
+  if (isRestricted) {
+    if (banner) {
+      banner.innerHTML = `⚠️ ช่องทาง PromptPay Auto ปิดปรับปรุงชั่วคราวในช่วงเวลา <span class="font-bold text-yellow-400">${settings.topup_restricted_start} - ${settings.topup_restricted_end}</span> น. (ช่องทางอื่นยังใช้งานได้ปกติ)`;
+      banner.classList.remove('hidden');
+    }
+
+    // Disable PromptPay Auto confirm button
+    const btn = document.getElementById('generateQrBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+
+    // Disable PromptPay Auto input
+    const input = document.getElementById('ppAutoAmountInput');
+    if (input) {
+      input.disabled = true;
+      input.classList.add('opacity-50', 'cursor-not-allowed');
+    }
+
+    // Disable quick select buttons for PromptPay Auto
+    const quickBtns = document.querySelectorAll('#panel-promptpay-auto button[type="button"]');
+    quickBtns.forEach(btn => {
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+    });
+  } else {
+    if (banner) banner.classList.add('hidden');
+
+    // Enable elements in case they were previously disabled
+    const btn = document.getElementById('generateQrBtn');
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+    const input = document.getElementById('ppAutoAmountInput');
+    if (input) {
+      input.disabled = false;
+      input.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+    const quickBtns = document.querySelectorAll('#panel-promptpay-auto button[type="button"]');
+    quickBtns.forEach(btn => {
+      btn.disabled = false;
+      btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    });
+  }
+
   const promptpayAutoBtn = document.getElementById('method-promptpay-auto');
   const promptpaySlipBtn = document.getElementById('method-promptpay-slip');
   const truemoneyBtn = document.getElementById('method-truemoney');
@@ -321,6 +371,11 @@ function setPpAutoAmount(val) {
 async function generatePromptPayQR() {
   if (!requireLogin()) return;
 
+  if (isTopupTimeRestricted(settings)) {
+    showToast(`ระบบเติมเงินปิดให้บริการชั่วคราวระหว่างเวลา ${settings.topup_restricted_start} - ${settings.topup_restricted_end} น.`, 'error');
+    return;
+  }
+
   const amountInput = document.getElementById('ppAutoAmountInput');
   const amount = parseFloat(amountInput.value);
   if (isNaN(amount) || amount <= 0) {
@@ -495,5 +550,35 @@ async function submitAngpao() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<span>🧧</span> ยืนยันการเติมเงิน';
+  }
+}
+
+function isTopupTimeRestricted(settings) {
+  if (!settings || settings.topup_time_restriction_enabled !== 'true') {
+    return false;
+  }
+  const startTime = settings.topup_restricted_start;
+  const endTime = settings.topup_restricted_end;
+  if (!startTime || !endTime) return false;
+
+  let now;
+  try {
+    now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+  } catch (e) {
+    now = new Date();
+  }
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const [startH, startM] = startTime.split(':').map(Number);
+  const [endH, endM] = endTime.split(':').map(Number);
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+
+  if (startMinutes === endMinutes) return false;
+
+  if (startMinutes < endMinutes) {
+    return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+  } else {
+    return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
   }
 }

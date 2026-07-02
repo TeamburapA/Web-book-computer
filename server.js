@@ -929,21 +929,40 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
       });
     }
 
-    // ส่งไฟล์สลิปผ่าน multipart/form-data ตามที่ EasySlip v2 กำหนด
-    const form = new FormData();
-    form.append('image', req.file.buffer, {
-      filename: req.file.originalname || 'slip.jpg',
-      contentType: req.file.mimetype || 'image/jpeg'
-    });
+    let slipResponse;
+    const isV2 = slipApiUrl.includes('/v2');
 
-    const slipResponse = await fetch(slipApiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${slipApiKey}`,
-        ...form.getHeaders()
-      },
-      body: form
-    });
+    if (isV2) {
+      // --- EasySlip V2: ส่งไฟล์ผ่าน multipart/form-data ---
+      const form = new FormData();
+      form.append('image', req.file.buffer, {
+        filename: 'slip.jpg', // ใช้ชื่อไฟล์มาตรฐานเพื่อป้องกันปัญหาสระภาษาไทย
+        contentType: req.file.mimetype || 'image/jpeg'
+      });
+
+      slipResponse = await fetch(slipApiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${slipApiKey}`,
+          ...form.getHeaders()
+        },
+        body: form
+      });
+    } else {
+      // --- EasySlip V1 (Legacy): ส่งเป็น JSON Base64 ---
+      const base64Image = req.file.buffer.toString('base64');
+      slipResponse = await fetch(slipApiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${slipApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          image: base64Image,
+          base64: base64Image
+        })
+      });
+    }
 
     const slipResult = await slipResponse.json();
 
@@ -955,11 +974,15 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
       if (errorMsg === 'application_expired') {
         errorMsg = 'ระบบตรวจสอบสลิปขัดข้อง (API EasySlip หมดอายุ/ไม่ได้ต่ออายุแพ็กเกจ) กรุณาติดต่อแอดมิน';
       }
+      let debugNote = errorMsg;
+      if (req.file) {
+        debugNote += ` (size: ${req.file.size}B, type: ${req.file.mimetype}, node: ${process.version})`;
+      }
       await supabase.from('topups').insert({
         user_id: req.user.id,
         amount: 0,
         status: 'rejected',
-        note: errorMsg,
+        note: debugNote,
         slip_data: slipResult
       });
       return res.status(400).json({ error: errorMsg });
@@ -1283,6 +1306,9 @@ function extractAmountFromEMVCo(payload) {
 app.post('/api/topup/promptpay/generate', authMiddleware, async (req, res) => {
   try {
     const settings = await getSettings();
+    if (isTopupTimeRestricted(settings)) {
+      return res.status(400).json({ error: `ช่องทางเติมเงินผ่าน PromptPay Auto ปิดให้บริการชั่วคราวระหว่างเวลา ${settings.topup_restricted_start} - ${settings.topup_restricted_end} น.` });
+    }
     if (settings.topup_promptpay_enabled !== 'true') {
       return res.status(400).json({ error: 'ช่องทางเติมเงินผ่าน PromptPay Auto ปิดใช้งานชั่วคราว' });
     }
@@ -1602,8 +1628,41 @@ const defaultSettings = {
   truemoney_phone: '',
   topup_wallet_enabled: 'true',
   topup_promptpay_enabled: 'true',
-  topup_slip_enabled: 'true'
+  topup_slip_enabled: 'true',
+  topup_time_restriction_enabled: 'false',
+  topup_restricted_start: '01:00',
+  topup_restricted_end: '03:00'
 };
+
+function isTopupTimeRestricted(settings) {
+  if (!settings || settings.topup_time_restriction_enabled !== 'true') {
+    return false;
+  }
+  const startTime = settings.topup_restricted_start;
+  const endTime = settings.topup_restricted_end;
+  if (!startTime || !endTime) return false;
+
+  let now;
+  try {
+    now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+  } catch (e) {
+    now = new Date();
+  }
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const [startH, startM] = startTime.split(':').map(Number);
+  const [endH, endM] = endTime.split(':').map(Number);
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+
+  if (startMinutes === endMinutes) return false;
+
+  if (startMinutes < endMinutes) {
+    return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+  } else {
+    return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+  }
+}
 
 async function getSettings() {
   try {
@@ -2237,10 +2296,29 @@ app.put('/api/admin/users/:id/credit', authMiddleware, adminMiddleware, async (r
 // PUT /api/admin/settings — แก้ไขลิ้งก์ติดต่อ (Admin only)
 app.put('/api/admin/settings', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { facebook_url, discord_url, truemoney_phone, topup_wallet_enabled, topup_promptpay_enabled, topup_slip_enabled } = req.body;
+    const { 
+      facebook_url, 
+      discord_url, 
+      truemoney_phone, 
+      topup_wallet_enabled, 
+      topup_promptpay_enabled, 
+      topup_slip_enabled,
+      topup_time_restriction_enabled,
+      topup_restricted_start,
+      topup_restricted_end
+    } = req.body;
+
     if (!facebook_url || !discord_url) {
       return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
     }
+
+    if (topup_time_restriction_enabled === 'true') {
+      const timeRegex = /^\d{2}:\d{2}$/;
+      if (!timeRegex.test(topup_restricted_start) || !timeRegex.test(topup_restricted_end)) {
+        return res.status(400).json({ error: 'รูปแบบเวลาเริ่มต้นหรือสิ้นสุดไม่ถูกต้อง (ต้องเป็น HH:MM)' });
+      }
+    }
+
     // ดึง settings เดิมเพื่อรักษาค่าที่ไม่ได้ส่งมา (เช่น shop_accounts, slip_max_age_minutes)
     const currentSettings = await getSettings();
     await updateSettings({
@@ -2250,7 +2328,10 @@ app.put('/api/admin/settings', authMiddleware, adminMiddleware, async (req, res)
       truemoney_phone: truemoney_phone || '',
       topup_wallet_enabled: topup_wallet_enabled || 'true',
       topup_promptpay_enabled: topup_promptpay_enabled || 'true',
-      topup_slip_enabled: topup_slip_enabled || 'true'
+      topup_slip_enabled: topup_slip_enabled || 'true',
+      topup_time_restriction_enabled: topup_time_restriction_enabled || 'false',
+      topup_restricted_start: topup_restricted_start || '01:00',
+      topup_restricted_end: topup_restricted_end || '03:00'
     });
     res.json({ success: true, message: 'บันทึกการตั้งค่าสำเร็จ' });
   } catch (err) {

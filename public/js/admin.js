@@ -636,6 +636,10 @@ async function loadAdminSettings() {
     const walletCheckbox = document.getElementById('setting_topup_wallet_enabled');
     const promptPayCheckbox = document.getElementById('setting_topup_promptpay_enabled');
     const slipCheckbox = document.getElementById('setting_topup_slip_enabled');
+    const timeRestrictionCheckbox = document.getElementById('setting_topup_time_restriction_enabled');
+    const restrictedStartInput = document.getElementById('setting_topup_restricted_start');
+    const restrictedEndInput = document.getElementById('setting_topup_restricted_end');
+    const timeRestrictionInputs = document.getElementById('time_restriction_inputs');
 
     if (fbInput) fbInput.value = data.facebook_url || '';
     if (dcInput) dcInput.value = data.discord_url || '';
@@ -644,6 +648,19 @@ async function loadAdminSettings() {
     if (walletCheckbox) walletCheckbox.checked = data.topup_wallet_enabled === 'true';
     if (promptPayCheckbox) promptPayCheckbox.checked = data.topup_promptpay_enabled === 'true';
     if (slipCheckbox) slipCheckbox.checked = data.topup_slip_enabled === 'true';
+
+    if (timeRestrictionCheckbox) {
+      timeRestrictionCheckbox.checked = data.topup_time_restriction_enabled === 'true';
+      if (timeRestrictionInputs) {
+        if (timeRestrictionCheckbox.checked) {
+          timeRestrictionInputs.classList.remove('hidden');
+        } else {
+          timeRestrictionInputs.classList.add('hidden');
+        }
+      }
+    }
+    if (restrictedStartInput) restrictedStartInput.value = data.topup_restricted_start || '01:00';
+    if (restrictedEndInput) restrictedEndInput.value = data.topup_restricted_end || '03:00';
 
     // โหลดค่าอายุสลิปสูงสุด
     const slipMaxAgeInput = document.getElementById('setting_slip_max_age');
@@ -656,6 +673,18 @@ async function loadAdminSettings() {
 function setupSettingsForm() {
   const form = document.getElementById('settingsForm');
   if (!form) return;
+
+  const timeRestrictionCheckbox = document.getElementById('setting_topup_time_restriction_enabled');
+  const timeRestrictionInputs = document.getElementById('time_restriction_inputs');
+  if (timeRestrictionCheckbox && timeRestrictionInputs) {
+    timeRestrictionCheckbox.addEventListener('change', () => {
+      if (timeRestrictionCheckbox.checked) {
+        timeRestrictionInputs.classList.remove('hidden');
+      } else {
+        timeRestrictionInputs.classList.add('hidden');
+      }
+    });
+  }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -675,6 +704,12 @@ function setupSettingsForm() {
     const topup_promptpay_enabled = promptPayCheckbox && promptPayCheckbox.checked ? 'true' : 'false';
     const topup_slip_enabled = slipCheckbox && slipCheckbox.checked ? 'true' : 'false';
 
+    const restrictedStartInput = document.getElementById('setting_topup_restricted_start');
+    const restrictedEndInput = document.getElementById('setting_topup_restricted_end');
+    const topup_time_restriction_enabled = timeRestrictionCheckbox && timeRestrictionCheckbox.checked ? 'true' : 'false';
+    const topup_restricted_start = restrictedStartInput ? restrictedStartInput.value : '01:00';
+    const topup_restricted_end = restrictedEndInput ? restrictedEndInput.value : '03:00';
+
     try {
       await apiFetch('/api/admin/settings', {
         method: 'PUT',
@@ -684,7 +719,10 @@ function setupSettingsForm() {
           truemoney_phone,
           topup_wallet_enabled,
           topup_promptpay_enabled,
-          topup_slip_enabled
+          topup_slip_enabled,
+          topup_time_restriction_enabled,
+          topup_restricted_start,
+          topup_restricted_end
         }
       });
       showToast('บันทึกการตั้งค่าสำเร็จ', 'success');

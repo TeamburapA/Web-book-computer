@@ -14,5 +14,8 @@ INSERT INTO settings (key, value) VALUES
 ('truemoney_phone', ''),
 ('topup_wallet_enabled', 'true'),
 ('topup_promptpay_enabled', 'true'),
-('topup_slip_enabled', 'true')
+('topup_slip_enabled', 'true'),
+('topup_time_restriction_enabled', 'false'),
+('topup_restricted_start', '01:00'),
+('topup_restricted_end', '03:00')
 ON CONFLICT (key) DO NOTHING;

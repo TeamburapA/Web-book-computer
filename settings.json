@@ -2,7 +2,16 @@
   "facebook_url": "https://www.facebook.com/share/1DEVD885dP/",
   "discord_url": "https://discord.gg/fUu8aENZr",
   "truemoney_phone": "0648964600",
-  "topup_wallet_enabled": "false",
-  "topup_promptpay_enabled": "true",
-  "topup_slip_enabled": "false"
+  "topup_wallet_enabled": "true",
+  "topup_promptpay_enabled": "false",
+  "topup_slip_enabled": "true",
+  "outage_start_machine_10": "2026-07-01T06:20:48.326Z",
+  "outage_start_machine_9": "2026-06-28T17:17:13.162Z",
+  "outage_start_machine_12": "2026-06-24T18:04:36.180Z",
+  "outage_start_machine_5": "2026-06-24T17:54:21.033Z",
+  "outage_machine_5": "false",
+  "outage_machine_12": "false",
+  "outage_machine_9": "false",
+  "outage_machine_10": "false",
+  "shop_accounts": "[{\"bank\":\"KBANK\",\"accountName\":\"นายศุภกร กรมรินทร์\",\"label\":\"148-1-69796-0\"}]"
 }

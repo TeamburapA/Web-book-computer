@@ -154,6 +154,7 @@ app.use((req, res, next) => {
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 app.use('/.well-known', express.static(path.join(__dirname, '.well-known')));
 
@@ -879,9 +880,25 @@ app.post('/api/release/:machineId', authMiddleware, async (req, res) => {
 // TOPUP ROUTES (ตรวจสลิปอัตโนมัติ)
 // =============================================
 
+// --- Rate Limiter สำหรับการส่งสลิป (In-Memory) ---
+const slipRateLimitMap = new Map();
+const SLIP_RATE_LIMIT = 3;       // จำนวนครั้งสูงสุดต่อ user
+const SLIP_RATE_WINDOW = 60000;  // ภายใน 1 นาที (ms)
+
 // POST /api/verify-slip — ตรวจสอบสลิปและเติมเครดิต
 app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, res) => {
   try {
+    // --- ชั้นที่ 1: Rate Limiting — จำกัด 3 ครั้ง/นาที/user ---
+    const rateLimitUserId = req.user.id;
+    const rateLimitNow = Date.now();
+    const userRateHistory = slipRateLimitMap.get(rateLimitUserId) || [];
+    const recentAttempts = userRateHistory.filter(t => rateLimitNow - t < SLIP_RATE_WINDOW);
+    if (recentAttempts.length >= SLIP_RATE_LIMIT) {
+      return res.status(429).json({ error: 'คุณส่งสลิปถี่เกินไป กรุณารอสักครู่แล้วลองใหม่ (สูงสุด 3 ครั้งต่อนาที)' });
+    }
+    recentAttempts.push(rateLimitNow);
+    slipRateLimitMap.set(rateLimitUserId, recentAttempts);
+
     const settings = await getSettings();
     if (settings.topup_slip_enabled !== 'true') {
       return res.status(400).json({ error: 'ช่องทางเติมเงินผ่านสลิปธนาคารถูกปิดใช้งานชั่วคราว' });
@@ -912,19 +929,20 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
       });
     }
 
-    // แปลงรูปภาพใน Buffer เป็น Base64 String สำหรับ EasySlip
-    const base64Image = req.file.buffer.toString('base64');
+    // ส่งไฟล์สลิปผ่าน multipart/form-data ตามที่ EasySlip v2 กำหนด
+    const form = new FormData();
+    form.append('image', req.file.buffer, {
+      filename: req.file.originalname || 'slip.jpg',
+      contentType: req.file.mimetype || 'image/jpeg'
+    });
 
     const slipResponse = await fetch(slipApiUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${slipApiKey}`,
-        'Content-Type': 'application/json'
+        ...form.getHeaders()
       },
-      body: JSON.stringify({
-        image: base64Image,
-        base64: base64Image
-      })
+      body: form
     });
 
     const slipResult = await slipResponse.json();
@@ -974,6 +992,105 @@ app.post('/api/verify-slip', authMiddleware, upload.single('slip'), async (req, 
 
     if (existingTopup) {
       return res.status(400).json({ error: 'สลิปนี้ถูกใช้งานไปแล้ว ไม่สามารถใช้ซ้ำได้' });
+    }
+
+    // --- ชั้นที่ 2: ตรวจสอบบัญชีปลายทาง (Receiver Verification) ---
+    let shopAccountsRaw = settings.shop_accounts || '[]';
+    let shopAccounts = [];
+    try {
+      shopAccounts = typeof shopAccountsRaw === 'string' ? JSON.parse(shopAccountsRaw) : shopAccountsRaw;
+    } catch (e) { shopAccounts = []; }
+
+    if (shopAccounts.length > 0) {
+      const receiver = slipResult.data.receiver
+        || (slipResult.data.rawSlip && slipResult.data.rawSlip.receiver);
+
+      if (!receiver) {
+        await supabase.from('topups').insert({
+          user_id: req.user.id, amount: 0, transaction_ref: transRef,
+          status: 'rejected', note: 'ไม่พบข้อมูลบัญชีปลายทางในสลิป',
+          slip_data: slipResult.data
+        });
+        return res.status(400).json({ error: 'ไม่สามารถตรวจสอบบัญชีปลายทางในสลิปได้ กรุณาลองใหม่อีกครั้ง' });
+      }
+
+      // ดึงข้อมูลผู้รับจาก EasySlip response
+      const receiverBankShort = (receiver.bank && (receiver.bank.short || receiver.bank.id)) || '';
+      const receiverName = (receiver.account && receiver.account.name
+        && (receiver.account.name.th || receiver.account.name.en)) || '';
+
+      // ฟังก์ชันล้างข้อมูลชื่อ: ลบช่องว่าง, จุด, ขีด, และคำนำหน้าชื่อ เพื่อให้เปรียบเทียบกันได้แม้ชื่อถูกบังบางส่วน (Masked)
+      const cleanString = (str) => {
+        if (!str) return '';
+        return str
+          .replace(/[\s\.\,\-\_]+/g, '')
+          .replace(/^(นาย|นางสาว|นาง|เด็กชาย|เด็กหญิง|mr|mrs|miss|ms)\.?/gi, '')
+          .toLowerCase();
+      };
+
+      // เปรียบเทียบกับบัญชีร้านที่ตั้งค่าไว้
+      const isValidReceiver = shopAccounts.some(account => {
+        const bankCode = (account.bank || '').toUpperCase();
+        const accName = (account.accountName || '');
+
+        // จับคู่รหัสธนาคาร หรือชื่อย่อธนาคาร
+        const bankMatch = receiverBankShort.toUpperCase().includes(bankCode)
+          || bankCode.includes(receiverBankShort.toUpperCase())
+          || (receiver.bank && receiver.bank.id && receiver.bank.id === bankCode)
+          || (receiver.bank && receiver.bank.name && receiver.bank.name.toUpperCase().includes(bankCode));
+
+        // ดึงชื่อผู้รับในสลิปทั้งไทยและอังกฤษ
+        const cleanAccName = cleanString(accName);
+        const receiverNameTh = cleanString(receiver.account && receiver.account.name && receiver.account.name.th);
+        const receiverNameEn = cleanString(receiver.account && receiver.account.name && receiver.account.name.en);
+
+        // เช็คว่าชื่อที่ดึงมาบางส่วน ตรงกับชื่อเต็มที่ตั้งค่าไว้หรือไม่
+        const nameMatch = (receiverNameTh && (cleanAccName.includes(receiverNameTh) || receiverNameTh.includes(cleanAccName)))
+          || (receiverNameEn && (cleanAccName.includes(receiverNameEn) || receiverNameEn.includes(cleanAccName)));
+
+        return bankMatch && nameMatch;
+      });
+
+      if (!isValidReceiver) {
+        await supabase.from('topups').insert({
+          user_id: req.user.id, amount: 0, transaction_ref: transRef,
+          status: 'rejected',
+          note: `บัญชีปลายทางไม่ตรงกับร้าน: ${receiverName} (${receiverBankShort})`,
+          slip_data: slipResult.data
+        });
+        console.warn(`⚠️ Slip rejected — wrong receiver: user=${req.user.username}, receiver=${receiverName} (${receiverBankShort})`);
+        return res.status(400).json({ error: 'สลิปนี้ไม่ได้โอนเข้าบัญชีของร้าน กรุณาโอนเข้าบัญชีที่ระบุไว้ในหน้าเติมเงินเท่านั้น' });
+      }
+    }
+
+    // --- ชั้นที่ 3: ตรวจสอบอายุสลิป (Slip Age Validation) ---
+    const MAX_SLIP_AGE_MINUTES = parseInt(settings.slip_max_age_minutes) || 5;
+    const transDate = slipResult.data.transDate || slipResult.data.date
+      || (slipResult.data.rawSlip && slipResult.data.rawSlip.transDate);
+    const transTimestamp = slipResult.data.transTimestamp
+      || (slipResult.data.rawSlip && slipResult.data.rawSlip.transTimestamp);
+
+    let slipTime = null;
+    if (transTimestamp) {
+      slipTime = new Date(transTimestamp);
+    } else if (transDate) {
+      slipTime = new Date(transDate);
+    }
+
+    if (slipTime && !isNaN(slipTime.getTime())) {
+      const slipAgeMinutes = (Date.now() - slipTime.getTime()) / (1000 * 60);
+      if (slipAgeMinutes > MAX_SLIP_AGE_MINUTES) {
+        await supabase.from('topups').insert({
+          user_id: req.user.id, amount: 0, transaction_ref: transRef,
+          status: 'rejected',
+          note: `สลิปเก่าเกินกำหนด (${Math.round(slipAgeMinutes)} นาที, จำกัด ${MAX_SLIP_AGE_MINUTES} นาที)`,
+          slip_data: slipResult.data
+        });
+        console.warn(`⚠️ Slip rejected — too old: user=${req.user.username}, age=${Math.round(slipAgeMinutes)} min`);
+        return res.status(400).json({
+          error: `สลิปนี้โอนเงินเมื่อ ${Math.round(slipAgeMinutes)} นาทีที่แล้ว ระบบรับเฉพาะสลิปที่โอนภายใน ${MAX_SLIP_AGE_MINUTES} นาทีเท่านั้น`
+        });
+      }
     }
 
     const topupAmount = parseFloat(amount);
@@ -1184,6 +1301,10 @@ app.post('/api/topup/promptpay/generate', authMiddleware, async (req, res) => {
     // สร้างหมายเลขอ้างอิงรายการเติมเงินที่ไม่ซ้ำกัน
     const reference = `PP-${Date.now()}-${req.user.id}`;
 
+    // สร้าง Callback URL อัตโนมัติตามโฮสต์ที่ใช้งานจริง (รองรับทั้ง localhost และโดเมนหลัก)
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const callbackUrl = `${protocol}://${req.get('host')}/api/webhook/inwcloud`;
+
     // ส่งคำขอสร้าง QR code ไปที่ API inwcloud.shop
     const response = await fetch('https://api.inwcloud.shop/v1/promptpay/generate', {
       method: 'POST',
@@ -1193,7 +1314,8 @@ app.post('/api/topup/promptpay/generate', authMiddleware, async (req, res) => {
       },
       body: JSON.stringify({
         amount: topupAmount,
-        reference: reference
+        reference: reference,
+        callback_url: callbackUrl
       })
     });
 
@@ -1240,6 +1362,15 @@ app.post('/api/topup/promptpay/generate', authMiddleware, async (req, res) => {
 app.post('/api/webhook/inwcloud', async (req, res) => {
   try {
     console.log('Received inwcloud webhook payload:', req.body);
+    
+    // บันทึก Log ลงไฟล์เพื่อตรวจสอบความถูกต้องของข้อมูลจาก API จริง
+    try {
+      const logPath = path.join(__dirname, 'webhook.log');
+      const logMsg = `[${new Date().toISOString()}] BODY: ${JSON.stringify(req.body)} | HEADERS: ${JSON.stringify(req.headers)}\n`;
+      fs.appendFileSync(logPath, logMsg, 'utf8');
+    } catch (e) {
+      console.error('Failed to write webhook.log:', e);
+    }
     
     // ดึงค่าอ้างอิงและยอดเงินจาก request body
     const ref = req.body.reference || req.body.ref || req.body.reference_no;
@@ -1302,13 +1433,13 @@ app.post('/api/webhook/inwcloud', async (req, res) => {
   }
 });
 
-// GET /api/topup/promptpay/status/:ref — ตรวจสอบสถานะการเติมเงินฝั่งลูกค้าระหว่างรอ Webhook
+// GET /api/topup/promptpay/status/:ref — ตรวจสอบสถานะการเติมเงินโดยถาม inwcloud API โดยตรง
 app.get('/api/topup/promptpay/status/:ref', authMiddleware, async (req, res) => {
   try {
     const { ref } = req.params;
     const { data: topup, error } = await supabase
       .from('topups')
-      .select('status, amount')
+      .select('*')
       .eq('transaction_ref', ref)
       .eq('user_id', req.user.id)
       .single();
@@ -1317,6 +1448,77 @@ app.get('/api/topup/promptpay/status/:ref', authMiddleware, async (req, res) => 
       return res.status(404).json({ error: 'ไม่พบรายการอ้างอิงนี้' });
     }
 
+    // ถ้าสถานะเป็น approved อยู่แล้ว ส่งกลับทันที
+    if (topup.status === 'approved') {
+      return res.json({
+        success: true,
+        status: 'approved',
+        amount: topup.amount
+      });
+    }
+
+    // ถ้ายังเป็น pending — ถาม inwcloud API โดยตรงว่าเงินเข้าแล้วหรือยัง
+    const apiKey = process.env.INWCLOUD_API_KEY;
+    const transactionId = topup.slip_data && topup.slip_data.transactionId;
+
+    if (apiKey && transactionId) {
+      try {
+        const checkRes = await fetch('https://api.inwcloud.shop/v1/promptpay/check', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ transactionId: transactionId })
+        });
+
+        const checkData = await checkRes.json();
+        console.log(`inwcloud check for ${ref}:`, JSON.stringify(checkData));
+
+        // ถ้า inwcloud ยืนยันว่าชำระสำเร็จ — เครดิตเงินให้ผู้ใช้ทันที
+        if (checkData.status === 'success' && checkData.message && checkData.message.includes('สำเร็จ')) {
+          // ดึงยอดเงินจาก inwcloud response หรือจากที่บันทึกไว้
+          const paidAmount = parseFloat(checkData.amount) || topup.amount;
+
+          // ดึงเครดิตปัจจุบันของผู้ใช้
+          const { data: user } = await supabase
+            .from('users')
+            .select('credit')
+            .eq('id', req.user.id)
+            .single();
+
+          if (user) {
+            const newCredit = parseFloat(user.credit) + paidAmount;
+            await supabase
+              .from('users')
+              .update({ credit: newCredit })
+              .eq('id', req.user.id);
+
+            // อัปเดตสถานะเป็น approved
+            await supabase
+              .from('topups')
+              .update({
+                status: 'approved',
+                note: 'ชำระเงินสำเร็จผ่าน PromptPay Auto (inwcloud)',
+                amount: paidAmount
+              })
+              .eq('id', topup.id);
+
+            console.log(`Active check: credited user ${req.user.id} with ฿${paidAmount}`);
+
+            return res.json({
+              success: true,
+              status: 'approved',
+              amount: paidAmount
+            });
+          }
+        }
+      } catch (checkErr) {
+        console.error('inwcloud check API error:', checkErr.message);
+      }
+    }
+
+    // ยังไม่ชำระ — ส่งสถานะ pending กลับไป
     res.json({
       success: true,
       status: topup.status,
@@ -1679,6 +1881,75 @@ app.get('/api/admin/topups', authMiddleware, adminMiddleware, async (req, res) =
   }
 });
 
+// GET /api/admin/topups/check-pending — ตรวจสอบและอัปเดตรายการ pending ทั้งหมดกับ inwcloud
+app.get('/api/admin/topups/check-pending', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const apiKey = process.env.INWCLOUD_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'INWCLOUD_API_KEY not configured' });
+    }
+
+    const { data: topups, error } = await supabase
+      .from('topups')
+      .select('*')
+      .eq('status', 'pending')
+      .like('transaction_ref', 'PP-%');
+
+    if (error) throw error;
+
+    let updatedCount = 0;
+    const results = [];
+
+    for (const topup of topups) {
+      const transactionId = topup.slip_data?.transactionId;
+      if (!transactionId) continue;
+
+      try {
+        const checkRes = await fetch('https://api.inwcloud.shop/v1/promptpay/check', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ transactionId })
+        });
+
+        const checkData = await checkRes.json();
+        if (checkData.status === 'success' && checkData.message?.includes('สำเร็จ')) {
+          const paidAmount = parseFloat(checkData.amount) || topup.amount;
+
+          // ดึงเครดิตผู้ใช้
+          const { data: user } = await supabase
+            .from('users')
+            .select('credit')
+            .eq('id', topup.user_id)
+            .single();
+
+          if (user) {
+            const newCredit = parseFloat(user.credit) + paidAmount;
+            await supabase.from('users').update({ credit: newCredit }).eq('id', topup.user_id);
+            await supabase.from('topups').update({
+              status: 'approved',
+              note: 'ชำระเงินสำเร็จผ่าน PromptPay Auto (inwcloud - Check Pending Admin)',
+              amount: paidAmount
+            }).eq('id', topup.id);
+
+            updatedCount++;
+            results.push({ ref: topup.transaction_ref, amount: paidAmount, status: 'approved' });
+          }
+        }
+      } catch (err) {
+        console.error(`Error checking ${topup.transaction_ref}:`, err.message);
+      }
+    }
+
+    res.json({ success: true, checked_count: topups.length, updated_count: updatedCount, details: results });
+  } catch (err) {
+    console.error('Check pending admin error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/admin/users — ดึงรายชื่อผู้ใช้ทั้งหมด
 app.get('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) => {
   try {
@@ -1970,7 +2241,10 @@ app.put('/api/admin/settings', authMiddleware, adminMiddleware, async (req, res)
     if (!facebook_url || !discord_url) {
       return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน' });
     }
+    // ดึง settings เดิมเพื่อรักษาค่าที่ไม่ได้ส่งมา (เช่น shop_accounts, slip_max_age_minutes)
+    const currentSettings = await getSettings();
     await updateSettings({
+      ...currentSettings,
       facebook_url,
       discord_url,
       truemoney_phone: truemoney_phone || '',
@@ -1982,6 +2256,99 @@ app.put('/api/admin/settings', authMiddleware, adminMiddleware, async (req, res)
   } catch (err) {
     console.error('Update settings error:', err);
     res.status(500).json({ error: err.message || 'ไม่สามารถบันทึกการตั้งค่าได้' });
+  }
+});
+
+// =============================================
+// SHOP ACCOUNTS MANAGEMENT (บัญชีรับโอนเงินของร้าน)
+// =============================================
+
+// GET /api/admin/shop-accounts — ดึงรายการบัญชีร้าน
+app.get('/api/admin/shop-accounts', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const settings = await getSettings();
+    let accounts = [];
+    try {
+      const raw = settings.shop_accounts || '[]';
+      accounts = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (e) { accounts = []; }
+    res.json({ success: true, accounts });
+  } catch (err) {
+    res.status(500).json({ error: 'ไม่สามารถดึงข้อมูลบัญชีร้านได้' });
+  }
+});
+
+// POST /api/admin/shop-accounts — เพิ่มบัญชีร้านใหม่
+app.post('/api/admin/shop-accounts', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { bank, accountName, label } = req.body;
+    if (!bank || !accountName) {
+      return res.status(400).json({ error: 'กรุณากรอกชื่อธนาคาร (รหัสย่อ) และชื่อบัญชี' });
+    }
+
+    const settings = await getSettings();
+    let accounts = [];
+    try {
+      const raw = settings.shop_accounts || '[]';
+      accounts = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (e) { accounts = []; }
+
+    accounts.push({ bank: bank.trim(), accountName: accountName.trim(), label: (label || '').trim() });
+    settings.shop_accounts = JSON.stringify(accounts);
+    await updateSettings(settings);
+
+    console.log(`🏦 Shop account added: ${bank} / ${accountName}`);
+    res.json({ success: true, message: 'เพิ่มบัญชีร้านสำเร็จ', accounts });
+  } catch (err) {
+    console.error('Add shop account error:', err);
+    res.status(500).json({ error: 'ไม่สามารถเพิ่มบัญชีร้านได้' });
+  }
+});
+
+// DELETE /api/admin/shop-accounts/:index — ลบบัญชีร้าน
+app.delete('/api/admin/shop-accounts/:index', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const index = parseInt(req.params.index);
+    const settings = await getSettings();
+    let accounts = [];
+    try {
+      const raw = settings.shop_accounts || '[]';
+      accounts = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (e) { accounts = []; }
+
+    if (index < 0 || index >= accounts.length) {
+      return res.status(404).json({ error: 'ไม่พบบัญชีร้านที่ต้องการลบ' });
+    }
+
+    const removed = accounts.splice(index, 1);
+    settings.shop_accounts = JSON.stringify(accounts);
+    await updateSettings(settings);
+
+    console.log(`🏦 Shop account removed: ${JSON.stringify(removed[0])}`);
+    res.json({ success: true, message: 'ลบบัญชีร้านสำเร็จ', accounts });
+  } catch (err) {
+    console.error('Delete shop account error:', err);
+    res.status(500).json({ error: 'ไม่สามารถลบบัญชีร้านได้' });
+  }
+});
+
+// PUT /api/admin/slip-settings — ตั้งค่าอายุสลิปสูงสุด
+app.put('/api/admin/slip-settings', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { slip_max_age_minutes } = req.body;
+    const maxAge = parseInt(slip_max_age_minutes);
+    if (isNaN(maxAge) || maxAge < 1 || maxAge > 60) {
+      return res.status(400).json({ error: 'อายุสลิปสูงสุดต้องเป็นตัวเลข 1-60 นาที' });
+    }
+
+    const settings = await getSettings();
+    settings.slip_max_age_minutes = String(maxAge);
+    await updateSettings(settings);
+
+    res.json({ success: true, message: `ตั้งค่าอายุสลิปสูงสุดเป็น ${maxAge} นาที สำเร็จ` });
+  } catch (err) {
+    console.error('Update slip settings error:', err);
+    res.status(500).json({ error: 'ไม่สามารถบันทึกการตั้งค่าได้' });
   }
 });
 

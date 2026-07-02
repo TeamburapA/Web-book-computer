@@ -40,6 +40,9 @@ async function initAdmin() {
     setupUserTimeForm();
     setupSettingsForm();
     setupElectricityForm();
+    setupShopAccountForm();
+    setupSlipSettingsForm();
+    await loadShopAccounts();
   } catch (err) {
     document.getElementById('accessDenied').classList.remove('hidden');
     document.getElementById('adminContent').classList.add('hidden');
@@ -641,6 +644,10 @@ async function loadAdminSettings() {
     if (walletCheckbox) walletCheckbox.checked = data.topup_wallet_enabled === 'true';
     if (promptPayCheckbox) promptPayCheckbox.checked = data.topup_promptpay_enabled === 'true';
     if (slipCheckbox) slipCheckbox.checked = data.topup_slip_enabled === 'true';
+
+    // โหลดค่าอายุสลิปสูงสุด
+    const slipMaxAgeInput = document.getElementById('setting_slip_max_age');
+    if (slipMaxAgeInput) slipMaxAgeInput.value = data.slip_max_age_minutes || '5';
   } catch (err) {
     console.error('Error loading settings:', err);
   }
@@ -936,4 +943,126 @@ async function deleteElectricityCostLog(id) {
   } catch (err) {
     showToast(err.error || 'เกิดข้อผิดพลาดในการลบรายการ', 'error');
   }
+}
+
+// =============================================
+// SHOP ACCOUNTS MANAGEMENT (บัญชีรับโอนเงินของร้าน)
+// =============================================
+
+async function loadShopAccounts() {
+  const container = document.getElementById('shopAccountsList');
+  if (!container) return;
+
+  try {
+    const data = await apiFetch('/api/admin/shop-accounts');
+    const accounts = data.accounts || [];
+
+    if (accounts.length === 0) {
+      container.innerHTML = `
+        <div class="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-center">
+          <p class="text-red-400 text-sm font-semibold">⚠️ ยังไม่ได้ตั้งค่าบัญชีร้าน</p>
+          <p class="text-gray-500 text-xs mt-1">ระบบจะยังไม่ตรวจสอบบัญชีปลายทาง — กรุณาเพิ่มบัญชีด้านล่างเพื่อเปิดใช้งานระบบความปลอดภัย</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="space-y-2">
+        ${accounts.map((acc, idx) => `
+          <div class="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5 hover:border-green-500/20 transition">
+            <div class="flex items-center gap-3">
+              <span class="text-lg">🏦</span>
+              <div>
+                <p class="text-white text-sm font-semibold">${acc.accountName} <span class="text-yellow-400 font-mono text-xs">(${acc.bank})</span></p>
+                ${acc.label ? `<p class="text-gray-500 text-xs">${acc.label}</p>` : ''}
+              </div>
+            </div>
+            <button onclick="deleteShopAccount(${idx}, '${acc.accountName}')" 
+                    class="px-3 py-1.5 text-xs bg-red-500/10 text-red-400 rounded border border-red-500/20 hover:bg-red-500/20 transition font-semibold">🗑️ ลบ</button>
+          </div>
+        `).join('')}
+      </div>
+      <div class="mt-3 p-2.5 bg-green-500/10 border border-green-500/20 rounded-lg">
+        <p class="text-green-400 text-xs">✅ ระบบตรวจสอบบัญชีปลายทาง <strong>เปิดใช้งานแล้ว</strong> — สลิปที่ไม่ได้โอนเข้าบัญชีเหล่านี้จะถูกปฏิเสธ</p>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="text-center py-6 text-red-400 text-sm">❌ โหลดข้อมูลบัญชีร้านไม่สำเร็จ</div>`;
+  }
+}
+
+function setupShopAccountForm() {
+  const form = document.getElementById('addShopAccountForm');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('addShopAccountBtn');
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.innerHTML = '<div class="spinner mx-auto" style="width:18px;height:18px;border-width:2px"></div>';
+
+    const bank = document.getElementById('sa_bank').value.trim();
+    const accountName = document.getElementById('sa_account_name').value.trim();
+    const label = document.getElementById('sa_label').value.trim();
+
+    try {
+      await apiFetch('/api/admin/shop-accounts', {
+        method: 'POST',
+        body: { bank, accountName, label }
+      });
+      showToast('เพิ่มบัญชีร้านสำเร็จ', 'success');
+      document.getElementById('sa_bank').value = '';
+      document.getElementById('sa_account_name').value = '';
+      document.getElementById('sa_label').value = '';
+      await loadShopAccounts();
+    } catch (err) {
+      showToast(err.error || 'เกิดข้อผิดพลาดในการเพิ่มบัญชี', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  });
+}
+
+async function deleteShopAccount(index, name) {
+  if (!confirm(`ต้องการลบบัญชีร้าน "${name}" ใช่หรือไม่?`)) return;
+
+  try {
+    await apiFetch(`/api/admin/shop-accounts/${index}`, { method: 'DELETE' });
+    showToast('ลบบัญชีร้านสำเร็จ', 'success');
+    await loadShopAccounts();
+  } catch (err) {
+    showToast(err.error || 'เกิดข้อผิดพลาดในการลบบัญชี', 'error');
+  }
+}
+
+// --- Slip Security Settings ---
+function setupSlipSettingsForm() {
+  const form = document.getElementById('slipSettingsForm');
+  if (!form) return;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('slipSettingsBtn');
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.innerHTML = '<div class="spinner mx-auto" style="width:18px;height:18px;border-width:2px"></div>';
+
+    const slip_max_age_minutes = document.getElementById('setting_slip_max_age').value;
+
+    try {
+      await apiFetch('/api/admin/slip-settings', {
+        method: 'PUT',
+        body: { slip_max_age_minutes }
+      });
+      showToast(`ตั้งค่าอายุสลิปสูงสุดเป็น ${slip_max_age_minutes} นาที สำเร็จ`, 'success');
+    } catch (err) {
+      showToast(err.error || 'เกิดข้อผิดพลาดในการบันทึก', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  });
 }

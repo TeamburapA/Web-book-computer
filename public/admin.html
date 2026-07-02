@@ -149,6 +149,52 @@
           </div>
           <button type="submit" id="settingsFormSubmitBtn" class="btn-neon !py-3 !px-6">💾 บันทึกการตั้งค่า</button>
         </form>
+
+        <!-- ============ SHOP ACCOUNTS MANAGEMENT (บัญชีรับโอนเงินของร้าน) ============ -->
+        <div class="border-t border-white/5 mt-8 pt-8 max-w-2xl">
+          <h3 class="text-lg font-bold text-white mb-1 flex items-center gap-2">🏦 บัญชีรับโอนเงินของร้าน (ตรวจสลิป)</h3>
+          <p class="text-xs text-gray-500 mb-5">ระบบจะตรวจสอบว่าสลิปที่ส่งมาโอนเข้าบัญชีเหล่านี้หรือไม่ — ถ้าไม่ตรงจะถูกปฏิเสธทันที</p>
+
+          <!-- รายการบัญชีร้านที่ตั้งค่าไว้ -->
+          <div id="shopAccountsList" class="mb-5">
+            <div class="text-center py-6 text-gray-500 text-sm">กำลังโหลด...</div>
+          </div>
+
+          <!-- ฟอร์มเพิ่มบัญชีใหม่ -->
+          <div class="bg-white/5 p-4 rounded-lg border border-white/5">
+            <p class="text-sm font-semibold text-white mb-3">➕ เพิ่มบัญชีใหม่</p>
+            <form id="addShopAccountForm" class="space-y-3">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label class="block text-xs text-gray-400 mb-1">รหัสย่อธนาคาร *</label>
+                  <input id="sa_bank" type="text" class="cyber-input text-sm" placeholder="เช่น KBANK, SCB, BBL" required>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-400 mb-1">ชื่อบัญชี *</label>
+                  <input id="sa_account_name" type="text" class="cyber-input text-sm" placeholder="เช่น นายสมชาย ใจดี" required>
+                </div>
+                <div>
+                  <label class="block text-xs text-gray-400 mb-1">คำอธิบาย (ไม่บังคับ)</label>
+                  <input id="sa_label" type="text" class="cyber-input text-sm" placeholder="เช่น บัญชีหลัก กสิกร">
+                </div>
+              </div>
+              <button type="submit" id="addShopAccountBtn" class="btn-neon text-sm !py-2 !px-5">➕ เพิ่มบัญชี</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- ============ SLIP SECURITY SETTINGS ============ -->
+        <div class="border-t border-white/5 mt-8 pt-8 max-w-xl">
+          <h3 class="text-lg font-bold text-white mb-1 flex items-center gap-2">🔒 ตั้งค่าความปลอดภัยการตรวจสลิป</h3>
+          <p class="text-xs text-gray-500 mb-5">กำหนดอายุสลิปสูงสุดที่ระบบจะรับ — สลิปที่โอนเกินเวลาจะถูกปฏิเสธ</p>
+          <form id="slipSettingsForm" class="flex items-end gap-3">
+            <div class="flex-1">
+              <label class="block text-xs text-gray-400 mb-1">อายุสลิปสูงสุด (นาที) — ค่าเริ่มต้น 5 นาที</label>
+              <input id="setting_slip_max_age" type="number" min="1" max="60" step="1" class="cyber-input text-sm" placeholder="5" value="5">
+            </div>
+            <button type="submit" id="slipSettingsBtn" class="btn-neon text-sm !py-2.5 !px-5 whitespace-nowrap">💾 บันทึก</button>
+          </form>
+        </div>
       </div>
 
       <!-- FINANCE TAB -->

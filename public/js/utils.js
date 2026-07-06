@@ -247,7 +247,7 @@ function updateSavingsTips(machine, containerId) {
 }
 
 
-// --- Load and Bind Contact Links ---
+// --- Load and Bind Contact Links & Check Ad Popup ---
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     const data = await apiFetch('/api/settings');
@@ -259,7 +259,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (dcLink && data.discord_url) {
       dcLink.href = data.discord_url;
     }
+
+    // ตรวจสอบและแสดงหน้าต่างโฆษณา/ประกาศ Pop-up
+    const adPopupModal = document.getElementById('adPopupModal');
+    if (adPopupModal && data.popup_enabled === 'true' && data.popup_image_url) {
+      const dismissedUrl = localStorage.getItem('popup_dismissed_url');
+
+      // แสดงป๊อปอัพถ้ายังไม่ได้กดปิดรูปภาพนี้แบบถาวร
+      if (dismissedUrl !== data.popup_image_url) {
+        const adPopupImage = document.getElementById('adPopupImage');
+        if (adPopupImage) {
+          adPopupImage.src = data.popup_image_url;
+          adPopupImage.setAttribute('data-src', data.popup_image_url);
+        }
+        showModal('adPopupModal');
+      }
+    }
   } catch (err) {
-    console.error('Failed to load contact settings:', err);
+    console.error('Failed to load settings:', err);
   }
 });
+
+// ฟังก์ชันปิดหน้าต่างโฆษณา Pop-up
+function closeAdPopup(permanent = false) {
+  const adPopupModal = document.getElementById('adPopupModal');
+  if (adPopupModal) {
+    const adPopupImage = document.getElementById('adPopupImage');
+    const imageUrl = adPopupImage ? (adPopupImage.getAttribute('data-src') || adPopupImage.src) : '';
+    
+    if (permanent) {
+      if (imageUrl) {
+        localStorage.setItem('popup_dismissed_url', imageUrl);
+      }
+    }
+    hideModal('adPopupModal');
+  }
+}

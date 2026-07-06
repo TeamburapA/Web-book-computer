@@ -74,6 +74,7 @@
       <button class="tab-btn" onclick="switchAdminTab('users')" id="tab-users">👤 จัดการผู้ใช้</button>
       <button class="tab-btn" onclick="switchAdminTab('settings')" id="tab-settings">⚙️ ตั้งค่าระบบ</button>
       <button class="tab-btn" onclick="switchAdminTab('finance')" id="tab-finance">📊 สรุปผลการเงิน</button>
+      <button class="tab-btn" onclick="switchAdminTab('chat')" id="tab-chat">💬 แชทสด</button>
     </div>
 
     <!-- Tab Content -->
@@ -173,6 +174,42 @@
               </div>
             </div>
           </div>
+
+          <!-- POPUP SETTINGS SECTION -->
+          <div class="border-t border-white/5 pt-4">
+            <label class="block text-sm text-gray-400 mb-2">📢 ตั้งค่าหน้าต่างป๊อปอัพ (Popup Announcement)</label>
+            <div class="space-y-4 bg-white/5 p-4 rounded-lg border border-white/5">
+              <label class="flex items-center text-white cursor-pointer select-none">
+                <input id="setting_popup_enabled" type="checkbox" class="w-4 h-4 rounded border-gray-700 bg-gray-800 text-yellow-400 focus:ring-yellow-400/20 mr-2">
+                <span class="text-sm font-semibold">เปิดใช้งาน Pop-up ตอนเข้าเว็บครั้งแรก</span>
+              </label>
+
+              <div id="popup_settings_details" class="space-y-4 pl-6 hidden">
+                <div>
+                  <label class="block text-xs text-gray-400 mb-1">รูปภาพ Pop-up (อัปโหลดรูปภาพใหม่ หรือ ใส่ URL รูปภาพ)</label>
+                  <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <input id="setting_popup_image_url" type="text" class="cyber-input flex-1 text-sm" placeholder="เช่น /uploads/popup.jpg หรือ https://example.com/image.jpg">
+                    <div class="relative">
+                      <input id="popup_file_input" type="file" accept="image/*" class="hidden">
+                      <button type="button" onclick="document.getElementById('popup_file_input').click()" class="btn-outline text-xs whitespace-nowrap !py-2.5 !px-4">
+                        📁 อัปโหลดรูปภาพ
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Preview Box -->
+                <div>
+                  <span class="block text-[11px] text-gray-500 mb-2">ตัวอย่างรูปภาพ Pop-up:</span>
+                  <div class="border border-white/10 rounded-lg p-2 bg-black/40 max-w-xs flex items-center justify-center min-h-[150px]">
+                    <img id="popup_preview" src="" alt="ไม่พบรูปภาพตัวอย่าง" class="max-h-[150px] object-contain hidden">
+                    <span id="popup_preview_placeholder" class="text-xs text-gray-600">ไม่มีรูปภาพตัวอย่าง</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <button type="submit" id="settingsFormSubmitBtn" class="btn-neon !py-3 !px-6">💾 บันทึกการตั้งค่า</button>
         </form>
 
@@ -221,6 +258,39 @@
             <button type="submit" id="slipSettingsBtn" class="btn-neon text-sm !py-2.5 !px-5 whitespace-nowrap">💾 บันทึก</button>
           </form>
         </div>
+
+        <!-- ============ CHAT CLEANUP SETTINGS ============ -->
+        <div class="border-t border-white/5 mt-8 pt-8 max-w-xl">
+          <h3 class="text-lg font-bold text-white mb-1 flex items-center gap-2">🧹 ตั้งค่าล้างประวัติการแชท (Chat Cleanup)</h3>
+          <p class="text-xs text-gray-500 mb-5">ตั้งค่าการล้างข้อความแชทเพื่อประหยัดพื้นที่และจัดการความเป็นส่วนตัว</p>
+          
+          <form id="chatCleanupSettingsForm" class="space-y-4">
+            <label class="flex items-center text-white cursor-pointer select-none">
+              <input id="setting_chat_auto_delete_enabled" type="checkbox" class="w-4 h-4 rounded border-gray-700 bg-gray-800 text-yellow-400 focus:ring-yellow-400/20 mr-2">
+              <span class="text-sm font-semibold">เปิดระบบลบห้องแชทอัตโนมัติ (Auto-Delete)</span>
+            </label>
+            
+            <div id="chat_delete_days_container" class="hidden pl-6">
+              <label class="block text-xs text-gray-400 mb-1">ลบแชทที่ไม่มีความเคลื่อนไหวเกินกำหนด (จำนวนวัน)</label>
+              <input id="setting_chat_auto_delete_days" type="number" min="1" class="cyber-input text-sm" placeholder="30">
+            </div>
+            
+            <button type="submit" id="chatSettingsBtn" class="btn-neon text-sm !py-2.5 !px-5">💾 บันทึกการตั้งค่าแชท</button>
+          </form>
+
+          <div class="mt-6 bg-red-500/5 border border-red-500/20 p-4 rounded-lg">
+            <p class="text-sm font-bold text-red-400 mb-1">🚨 ล้างประวัติแชทเก่าทันที (Manual Cleanup Now)</p>
+            <p class="text-xs text-gray-500 mb-3">คำเตือน: การสั่งลบข้อความทันทีไม่สามารถกู้คืนข้อมูลได้</p>
+            <div class="flex items-end gap-3">
+              <div class="flex-1">
+                <label class="block text-xs text-gray-400 mb-1">ล้างประวัติแชทที่ไม่มีความเคลื่อนไหวมากกว่า (วัน)</label>
+                <input id="manual_chat_delete_days" type="number" min="1" value="30" class="cyber-input text-sm">
+              </div>
+              <button id="manualChatCleanupBtn" type="button" class="btn-pink text-sm !py-2.5 !px-5 whitespace-nowrap">🧹 ล้างข้อมูลทันที</button>
+            </div>
+          </div>
+        </div>
+      </div>
       </div>
 
       <!-- FINANCE TAB -->
@@ -278,6 +348,67 @@
             <h3 class="text-md font-bold text-white mb-4">📜 ประวัติการบันทึกค่าไฟฟ้า</h3>
             <div class="overflow-x-auto max-h-96 border border-white/5 rounded-lg" id="electricityLogsContainer">
               <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LIVE CHAT TAB -->
+      <div id="panel-chat" class="hidden">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-bold text-white">💬 แชทสดสนับสนุน (Live Support Chat)</h2>
+          <span class="text-xs text-gray-400">คุยแบบเรียลไทม์กับลูกค้าผ่านระบบ Supabase Realtime</span>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[550px] bg-cyber-dark/40 border border-white/5 rounded-xl overflow-hidden p-2">
+          <!-- Room list -->
+          <div class="lg:col-span-1 border-r border-white/5 flex flex-col h-full overflow-hidden bg-black/20">
+            <div class="p-3 border-b border-white/5 flex justify-between items-center bg-white/5">
+              <span class="text-xs text-gray-400 font-bold uppercase">รายการกล่องข้อความ</span>
+              <button onclick="refreshChatRooms()" class="text-xs text-yellow-400 hover:text-yellow-300 transition">
+                <i class="fas fa-sync-alt mr-1"></i> รีเฟรช
+              </button>
+            </div>
+            <div id="admin-chat-rooms" class="flex-1 overflow-y-auto divide-y divide-white/5">
+              <!-- Room items will load here -->
+              <div class="text-center p-8 text-gray-500 text-sm">กำลังโหลดห้องแชท...</div>
+            </div>
+          </div>
+          
+          <!-- Chat box area -->
+          <div class="lg:col-span-2 flex flex-col h-full overflow-hidden bg-black/10" id="admin-chat-area">
+            <div class="flex-1 flex flex-col items-center justify-center text-gray-500 text-sm" id="admin-chat-placeholder">
+              <div class="text-4xl mb-2">💬</div>
+              <p>กรุณาเลือกห้องแชทด้านซ้ายเพื่อพูดคุยกับลูกค้า</p>
+            </div>
+            
+            <div class="flex-1 flex flex-col h-full overflow-hidden hidden" id="admin-chat-active-panel">
+              <!-- Chat header -->
+              <div class="p-3 border-b border-white/5 flex justify-between items-center bg-white/5">
+                <div>
+                  <span class="font-bold text-white text-sm" id="active-chat-username">Guest</span>
+                  <span class="text-[10px] text-gray-500 block" id="active-chat-id">ID: </span>
+                </div>
+                <button id="admin-delete-chat-room-btn" class="text-xs text-red-500 hover:text-white border border-red-500/20 hover:border-red-500/50 hover:bg-red-500/10 px-3 py-1.5 rounded transition">
+                  <i class="fas fa-trash-alt mr-1"></i> ลบห้องแชทนี้
+                </button>
+              </div>
+              
+              <!-- Chat Messages list -->
+              <div id="admin-chat-messages" class="flex-1 p-4 overflow-y-auto flex flex-col gap-3" style="background: radial-gradient(circle at center, #14141f 0%, #0a0a0f 100%);">
+                <!-- Messages will load here -->
+              </div>
+              
+              <!-- Input -->
+              <form id="admin-chat-input-form" class="p-3 bg-cyber-card border-t border-white/5 flex gap-2 items-center">
+                <input type="file" id="admin-chat-file-input" accept="image/*" class="hidden">
+                <button type="button" id="admin-chat-attach-btn" class="p-2 text-gray-500 hover:text-yellow-400 transition" title="แนบรูปภาพ">
+                  <i class="fas fa-image text-lg"></i>
+                </button>
+                <input type="text" id="admin-chat-input" class="cyber-input flex-1" placeholder="พิมพ์คำตอบ..." autocomplete="off" required>
+                <button type="submit" class="btn-neon !py-2 !px-5 whitespace-nowrap">
+                  <i class="fas fa-paper-plane mr-1"></i> ส่ง
+                </button>
+              </form>
             </div>
           </div>
         </div>
@@ -443,7 +574,7 @@
   <!-- ADD USER TIME MODAL -->
   <div id="userTimeModal" class="modal-overlay">
     <div class="modal-content !max-w-md">
-      <h3 class="text-xl font-bold text-white mb-4">⏰ เพิ่มเวลาเช่าเครื่อง</h3>
+      <h3 class="text-xl font-bold text-white mb-4" id="ut_title">⏰ เพิ่มเวลาเช่าเครื่อง</h3>
       <div class="mb-4 text-sm bg-white/5 p-3 rounded border border-white/10 text-gray-300">
         <p class="flex justify-between"><span>ผู้ใช้:</span> <span id="ut_username" class="text-pink-400 font-semibold"></span></p>
         <p class="flex justify-between mt-1"><span>เครื่องที่เช่า:</span> <span id="ut_machinename" class="text-cyan-400 font-bold"></span></p>
@@ -451,8 +582,9 @@
       </div>
       <form id="userTimeForm" class="space-y-4">
         <input type="hidden" id="ut_user_id">
+        <input type="hidden" id="ut_mode" value="extend">
         <div>
-          <label class="block text-sm text-gray-400 mb-1">จำนวนเวลาที่ต้องการเพิ่ม *</label>
+          <label class="block text-sm text-gray-400 mb-1" id="ut_duration_label">จำนวนเวลาที่ต้องการเพิ่ม *</label>
           <div class="flex gap-2">
             <input id="ut_duration" type="number" step="any" min="0.1" class="cyber-input flex-1" placeholder="ระบุจำนวนเวลา" required>
             <select id="ut_unit" class="cyber-input w-32" required>

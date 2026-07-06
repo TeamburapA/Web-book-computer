@@ -3,11 +3,13 @@
   "discord_url": "https://discord.gg/fUu8aENZr",
   "truemoney_phone": "0648964600",
   "topup_wallet_enabled": "true",
-  "topup_promptpay_enabled": "true",
+  "topup_promptpay_enabled": "false",
   "topup_slip_enabled": "true",
   "topup_time_restriction_enabled": "true",
-  "topup_restricted_start": "15:15",
+  "topup_restricted_start": "23:30",
   "topup_restricted_end": "03:00",
+  "popup_enabled": "false",
+  "popup_image_url": "/uploads/popup-1783015359355.jpg",
   "outage_machine_9": "false",
   "outage_machine_10": "false",
   "shop_accounts": "[{\"bank\":\"KBANK\",\"accountName\":\"นายศุภกร กรมรินทร์\",\"label\":\"148-1-69796-0\"}]",
@@ -16,5 +18,7 @@
   "outage_start_machine_12": "2026-06-24T18:04:36.180Z",
   "outage_start_machine_5": "2026-06-24T17:54:21.033Z",
   "outage_machine_5": "false",
-  "outage_machine_12": "false"
+  "outage_machine_12": "false",
+  "chat_auto_delete_enabled": "false",
+  "chat_auto_delete_days": "30"
 }

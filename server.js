@@ -67,6 +67,19 @@ const ACTUAL_JWT_SECRET = envJwtSecret || 'cyber-rental-default-fallback-secret-
 global.WebSocket = require('ws');
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+// สร้าง Bucket 'chat-attachments' อัตโนมัติ (ถ้ายังไม่มี)
+(async () => {
+  try {
+    await supabase.storage.createBucket('chat-attachments', {
+      public: true,
+      fileSizeLimit: 5242880 // 5MB
+    });
+    console.log('✅ Supabase Storage bucket "chat-attachments" initialized.');
+  } catch (e) {
+    // Bucket อาจมีอยู่แล้ว
+  }
+})();
+
 // --- Tuya Smart API Client ---
 // ใช้ HMAC-SHA256 สำหรับ Signature ตามมาตรฐาน Tuya Open API
 const crypto = require('crypto');
@@ -318,6 +331,7 @@ app.get('/api/me', authMiddleware, async (req, res) => {
 // GET /api/machines — ดึงรายการเครื่องทั้งหมด
 app.get('/api/machines', async (req, res) => {
   try {
+    await autoReleaseExpiredMachines();
     const { category } = req.query;
     let query = supabase.from('machines').select('*').order('id');
 
@@ -868,6 +882,15 @@ app.post('/api/release/:machineId', authMiddleware, async (req, res) => {
       .eq('machine_id', machineId)
       .eq('status', 'active');
     if (rentalErr) throw rentalErr;
+
+    // ส่งการแจ้งเตือน Discord (รอบที่ 1: คืนเครื่อง)
+    sendDiscordExpiryNotification(
+      machine,
+      '🔌 แจ้งเตือน: คืนเครื่องเช่า',
+      'คอมเครื่องนี้ถูกกดคืนเครื่องแล้ว และกำลังเคลียข้อมูล'
+    ).catch(err => {
+      console.error('Error sending release webhook:', err);
+    });
 
     res.json({ success: true, message: 'คืนเครื่องสำเร็จ' });
   } catch (err) {
@@ -1596,6 +1619,7 @@ app.get('/api/my-rentals', authMiddleware, async (req, res) => {
 // GET /api/my-active-machines — เครื่องที่กำลังเช่าอยู่
 app.get('/api/my-active-machines', authMiddleware, async (req, res) => {
   try {
+    await autoReleaseExpiredMachines();
     const [machinesRes, settings] = await Promise.all([
       supabase
         .from('machines')
@@ -1631,7 +1655,11 @@ const defaultSettings = {
   topup_slip_enabled: 'true',
   topup_time_restriction_enabled: 'false',
   topup_restricted_start: '01:00',
-  topup_restricted_end: '03:00'
+  topup_restricted_end: '03:00',
+  popup_enabled: 'false',
+  popup_image_url: '',
+  chat_auto_delete_enabled: 'false',
+  chat_auto_delete_days: '30'
 };
 
 function isTopupTimeRestricted(settings) {
@@ -1724,6 +1752,58 @@ app.get('/api/settings', async (req, res) => {
     res.json(settings);
   } catch (err) {
     res.status(500).json({ error: 'ไม่สามารถดึงข้อมูลการตั้งค่าได้' });
+  }
+});
+
+// Ensure public/uploads exists
+const uploadsDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Multer storage configuration for popup images
+const popupStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '.png';
+    cb(null, `popup-${Date.now()}${ext}`);
+  }
+});
+
+const uploadPopup = multer({
+  storage: popupStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('อนุญาตเฉพาะไฟล์รูปภาพเท่านั้น'));
+  }
+});
+
+// POST /api/admin/upload-popup — อัปโหลดรูปภาพ Pop-up (Admin only)
+app.post('/api/admin/upload-popup', authMiddleware, adminMiddleware, (req, res, next) => {
+  uploadPopup.single('popup_image')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'ขนาดไฟล์ภาพเกินขีดจำกัด 5MB' });
+      }
+      return res.status(400).json({ error: `Multer error: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'กรุณาอัปโหลดไฟล์รูปภาพ' });
+    }
+    const imageUrl = `/uploads/${req.file.filename}`;
+    res.json({ success: true, imageUrl });
+  } catch (err) {
+    console.error('Upload popup error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ' });
   }
 });
 
@@ -1866,6 +1946,17 @@ app.patch('/api/admin/machines/:id/status', authMiddleware, adminMiddleware, asy
     const { status } = req.body;
     const updates = { status };
 
+    // ดึงข้อมูลเดิมของเครื่อง
+    const { data: machineBefore, error: getErr } = await supabase
+      .from('machines')
+      .select('*')
+      .eq('id', parseInt(req.params.id))
+      .single();
+
+    if (getErr || !machineBefore) {
+      return res.status(404).json({ error: 'ไม่พบเครื่อง' });
+    }
+
     // ถ้าเปลี่ยนเป็น available หรือ maintenance ให้ลบข้อมูลผู้เช่า
     if (status === 'available' || status === 'maintenance') {
       updates.current_user_id = null;
@@ -1887,6 +1978,14 @@ app.patch('/api/admin/machines/:id/status', authMiddleware, adminMiddleware, asy
       .single();
 
     if (error) throw error;
+
+    // หากสถานะเดิมคือ 'clearing' และสถานะใหม่ถูกเปลี่ยนเป็น 'available' (เคลียร์เสร็จสิ้น)
+    if (machineBefore.status === 'clearing' && status === 'available') {
+      sendDiscordAvailableNotification(data).catch(err => {
+        console.error('Error sending available webhook:', err);
+      });
+    }
+
     res.json({ success: true, machine: data });
   } catch (err) {
     res.status(500).json({ error: 'ไม่สามารถเปลี่ยนสถานะได้' });
@@ -2012,6 +2111,7 @@ app.get('/api/admin/topups/check-pending', authMiddleware, adminMiddleware, asyn
 // GET /api/admin/users — ดึงรายชื่อผู้ใช้ทั้งหมด
 app.get('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    await autoReleaseExpiredMachines();
     const [usersRes, machinesRes, settings] = await Promise.all([
       supabase
         .from('users')
@@ -2123,6 +2223,93 @@ app.post('/api/admin/users/:id/extend-session', authMiddleware, adminMiddleware,
   } catch (err) {
     console.error('Admin extend session error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดในการเพิ่มเวลาเช่าเครื่อง' });
+  }
+});
+
+// POST /api/admin/users/:id/reduce-session — ลดเวลาเช่าเครื่องให้ผู้ใช้งานแบบแมนนวล (ชั่วโมง/นาที)
+app.post('/api/admin/users/:id/reduce-session', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { duration, unit } = req.body; // duration: number, unit: 'minutes' | 'hours'
+
+    const numericDuration = parseFloat(duration);
+    if (isNaN(numericDuration) || numericDuration <= 0) {
+      return res.status(400).json({ error: 'จำนวนเวลาต้องเป็นตัวเลขที่มากกว่า 0' });
+    }
+
+    if (!['minutes', 'hours'].includes(unit)) {
+      return res.status(400).json({ error: 'หน่วยเวลาไม่ถูกต้อง (minutes หรือ hours)' });
+    }
+
+    const durationMs = unit === 'hours' 
+      ? numericDuration * 60 * 60 * 1000 
+      : numericDuration * 60 * 1000;
+
+    const durationHours = unit === 'hours' 
+      ? numericDuration 
+      : numericDuration / 60;
+
+    // ดึงเครื่องที่ผู้ใช้กำลังใช้งานอยู่
+    const { data: machine, error: machErr } = await supabase
+      .from('machines')
+      .select('*')
+      .eq('current_user_id', id)
+      .eq('status', 'in_use')
+      .single();
+
+    if (machErr || !machine) {
+      return res.status(404).json({ error: 'ผู้ใช้งานนี้ไม่มีเซสชันเช่าเครื่องที่กำลังใช้งานอยู่' });
+    }
+
+    const baseTime = machine.session_end_time ? new Date(machine.session_end_time) : new Date();
+    let newSessionEnd = new Date(baseTime.getTime() - durationMs);
+    
+    // หากเวลาสิ้นสุดใหม่น้อยกว่าเวลาปัจจุบัน ให้ถือว่าหมดเวลาทันที
+    const now = new Date();
+    if (newSessionEnd < now) {
+      newSessionEnd = new Date(now.getTime() - 1000); // 1 วินาทีย้อนหลังเพื่อให้ cron ตรวจพบว่าหมดเวลาแน่นอน
+    }
+
+    // อัปเดตเวลาเครื่อง
+    const { error: machUpdate } = await supabase
+      .from('machines')
+      .update({ session_end_time: newSessionEnd.toISOString() })
+      .eq('id', machine.id);
+
+    if (machUpdate) throw machUpdate;
+
+    // อัปเดต rentals record
+    const { data: activeRental } = await supabase
+      .from('rentals')
+      .select('*')
+      .eq('user_id', id)
+      .eq('machine_id', machine.id)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (activeRental) {
+      const currentDuration = parseFloat(activeRental.duration_hours) || 0;
+      const { error: rentalErr } = await supabase
+        .from('rentals')
+        .update({
+          duration_hours: Math.max(0, Math.round(currentDuration - durationHours)),
+          ended_at: newSessionEnd.toISOString()
+        })
+        .eq('id', activeRental.id);
+      if (rentalErr) throw rentalErr;
+    }
+
+    const unitLabel = unit === 'hours' ? 'ชั่วโมง' : 'นาที';
+    res.json({
+      success: true,
+      message: `ลดเวลาเช่าเครื่อง ${machine.name} ให้ผู้ใช้สำเร็จ ${numericDuration} ${unitLabel}`,
+      new_session_end: newSessionEnd.toISOString()
+    });
+  } catch (err) {
+    console.error('Admin reduce session error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการลดเวลาเช่าเครื่อง' });
   }
 });
 
@@ -2305,7 +2492,9 @@ app.put('/api/admin/settings', authMiddleware, adminMiddleware, async (req, res)
       topup_slip_enabled,
       topup_time_restriction_enabled,
       topup_restricted_start,
-      topup_restricted_end
+      topup_restricted_end,
+      popup_enabled,
+      popup_image_url
     } = req.body;
 
     if (!facebook_url || !discord_url) {
@@ -2331,7 +2520,9 @@ app.put('/api/admin/settings', authMiddleware, adminMiddleware, async (req, res)
       topup_slip_enabled: topup_slip_enabled || 'true',
       topup_time_restriction_enabled: topup_time_restriction_enabled || 'false',
       topup_restricted_start: topup_restricted_start || '01:00',
-      topup_restricted_end: topup_restricted_end || '03:00'
+      topup_restricted_end: topup_restricted_end || '03:00',
+      popup_enabled: popup_enabled || 'false',
+      popup_image_url: popup_image_url || ''
     });
     res.json({ success: true, message: 'บันทึกการตั้งค่าสำเร็จ' });
   } catch (err) {
@@ -2781,6 +2972,576 @@ app.get('/api/admin/financial-summary', authMiddleware, adminMiddleware, async (
 });
 
 // =============================================
+// DISCORD WEBHOOK NOTIFICATIONS
+// =============================================
+async function sendDiscordExpiryNotification(machine, customTitle, customDescription) {
+  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  try {
+    let expiryStr = 'N/A';
+    if (machine.session_end_time) {
+      const date = new Date(machine.session_end_time);
+      expiryStr = date.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+    } else {
+      expiryStr = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+    }
+
+    const specs = [];
+    if (machine.cpu) specs.push(`• **CPU:** ${machine.cpu}`);
+    if (machine.ram) specs.push(`• **RAM:** ${machine.ram}`);
+    if (machine.ssd) specs.push(`• **SSD:** ${machine.ssd}`);
+    if (machine.gpu) specs.push(`• **GPU:** ${machine.gpu}`);
+    if (machine.os) specs.push(`• **OS:** ${machine.os}`);
+    const specsText = specs.length > 0 ? specs.join('\n') : 'ไม่ระบุ';
+
+    const prices = [];
+    if (machine.price_per_hour !== undefined && machine.price_per_hour !== null && parseFloat(machine.price_per_hour) > 0) {
+      prices.push(`• **รายชั่วโมง:** ${parseFloat(machine.price_per_hour).toLocaleString()} บาท`);
+    }
+    if (machine.allow_daily && machine.price_per_day && parseFloat(machine.price_per_day) > 0) {
+      prices.push(`• **รายวัน:** ${parseFloat(machine.price_per_day).toLocaleString()} บาท`);
+    }
+    if (machine.allow_weekly) {
+      const weeklyPrice = parseFloat(machine.price_per_week) > 0 ? parseFloat(machine.price_per_week) : parseFloat(machine.price_per_day || 0) * 7;
+      if (weeklyPrice > 0) {
+        prices.push(`• **รายสัปดาห์:** ${weeklyPrice.toLocaleString()} บาท`);
+      }
+    }
+    if (machine.allow_monthly) {
+      const monthlyPrice = parseFloat(machine.price_per_month) > 0 ? parseFloat(machine.price_per_month) : parseFloat(machine.price_per_day || 0) * 30;
+      if (monthlyPrice > 0) {
+        prices.push(`• **รายเดือน:** ${monthlyPrice.toLocaleString()} บาท`);
+      }
+    }
+    const priceText = prices.length > 0 ? prices.join('\n') : 'ไม่ระบุ';
+
+    const embed = {
+      title: customTitle || '🔌 แจ้งเตือน: เครื่องหมดเวลาเช่า',
+      description: customDescription || 'คอมเครื่องนี้หมดเวลาเช่าแล้ว และกำลังเคลียข้อมูล',
+      color: 16737894, // Crimson Red / Orange (#FF4757)
+      fields: [
+        {
+          name: '🖥️ ชื่อเครื่อง',
+          value: `**${machine.name || 'ไม่ทราบชื่อ'}**`,
+          inline: true
+        },
+        {
+          name: '⏰ เวลาที่หมดอายุ',
+          value: `\`${expiryStr}\``,
+          inline: true
+        },
+        {
+          name: '⚙️ สเปกเครื่อง',
+          value: specsText,
+          inline: false
+        },
+        {
+          name: '💰 อัตราค่าบริการ',
+          value: priceText,
+          inline: false
+        },
+        {
+          name: '🔗 เช่าเครื่องต่อได้ที่นี่',
+          value: '[คลิกเพื่อเปิดเว็บไซต์ chickDDC.xyz](https://chickDDC.xyz)',
+          inline: false
+        }
+      ],
+      timestamp: new Date().toISOString(),
+      footer: {
+        text: 'ChickDDC System Notification'
+      }
+    };
+
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'ChickDDC Bot', embeds: [embed] })
+    });
+  } catch (err) {
+    console.error('Error sending Discord expiry notification:', err);
+  }
+}
+
+async function sendDiscordAvailableNotification(machine) {
+  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  try {
+    const specs = [];
+    if (machine.cpu) specs.push(`• **CPU:** ${machine.cpu}`);
+    if (machine.ram) specs.push(`• **RAM:** ${machine.ram}`);
+    if (machine.ssd) specs.push(`• **SSD:** ${machine.ssd}`);
+    if (machine.gpu) specs.push(`• **GPU:** ${machine.gpu}`);
+    if (machine.os) specs.push(`• **OS:** ${machine.os}`);
+    const specsText = specs.length > 0 ? specs.join('\n') : 'ไม่ระบุ';
+
+    const prices = [];
+    if (machine.price_per_hour !== undefined && machine.price_per_hour !== null && parseFloat(machine.price_per_hour) > 0) {
+      prices.push(`• **รายชั่วโมง:** ${parseFloat(machine.price_per_hour).toLocaleString()} บาท`);
+    }
+    if (machine.allow_daily && machine.price_per_day && parseFloat(machine.price_per_day) > 0) {
+      prices.push(`• **รายวัน:** ${parseFloat(machine.price_per_day).toLocaleString()} บาท`);
+    }
+    if (machine.allow_weekly) {
+      const weeklyPrice = parseFloat(machine.price_per_week) > 0 ? parseFloat(machine.price_per_week) : parseFloat(machine.price_per_day || 0) * 7;
+      if (weeklyPrice > 0) {
+        prices.push(`• **รายสัปดาห์:** ${weeklyPrice.toLocaleString()} บาท`);
+      }
+    }
+    if (machine.allow_monthly) {
+      const monthlyPrice = parseFloat(machine.price_per_month) > 0 ? parseFloat(machine.price_per_month) : parseFloat(machine.price_per_day || 0) * 30;
+      if (monthlyPrice > 0) {
+        prices.push(`• **รายเดือน:** ${monthlyPrice.toLocaleString()} บาท`);
+      }
+    }
+    const priceText = prices.length > 0 ? prices.join('\n') : 'ไม่ระบุ';
+
+    const embed = {
+      title: '✅ แจ้งเตือน: เคลียร์ข้อมูลเสร็จสิ้น',
+      description: 'คอมเครื่องนี้แอดมินเคลียข้อมูลเสร็จแล้ว พร้อมให้บริการเช่า',
+      color: 3066993, // Green (#2ECC71)
+      fields: [
+        {
+          name: '🖥️ ชื่อเครื่อง',
+          value: `**${machine.name || 'ไม่ทราบชื่อ'}**`,
+          inline: true
+        },
+        {
+          name: '⚙️ สเปกเครื่อง',
+          value: specsText,
+          inline: false
+        },
+        {
+          name: '💰 อัตราค่าบริการ',
+          value: priceText,
+          inline: false
+        },
+        {
+          name: '🔗 เช่าเครื่องต่อได้ที่นี่',
+          value: '[คลิกเพื่อเปิดเว็บไซต์ chickDDC.xyz](https://chickDDC.xyz)',
+          inline: false
+        }
+      ],
+      timestamp: new Date().toISOString(),
+      footer: {
+        text: 'ChickDDC System Notification'
+      }
+    };
+
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'ChickDDC Bot', embeds: [embed] })
+    });
+  } catch (err) {
+    console.error('Error sending Discord available notification:', err);
+  }
+}
+
+// =============================================
+// LIVE CHAT & AUTO-CLEANUP SYSTEM
+// =============================================
+
+// ฟังก์ชันลบไฟล์รูปภาพในห้องแชทออกจาก Supabase Storage
+async function deleteChatRoomFiles(roomIds) {
+  if (!roomIds || roomIds.length === 0) return;
+  try {
+    const { data: messages, error } = await supabase
+      .from('chat_messages')
+      .select('image_url')
+      .in('room_id', roomIds)
+      .not('image_url', 'is', null);
+
+    if (error) throw error;
+    if (!messages || messages.length === 0) return;
+
+    const filePaths = messages
+      .map(msg => {
+        const url = msg.image_url;
+        const marker = '/storage/v1/object/public/chat-attachments/';
+        const index = url.indexOf(marker);
+        if (index !== -1) {
+          return decodeURIComponent(url.substring(index + marker.length));
+        }
+        return null;
+      })
+      .filter(path => path !== null);
+
+    if (filePaths.length > 0) {
+      console.log(`🧹 Storage Cleanup: Deleting files:`, filePaths);
+      const { error: deleteError } = await supabase.storage
+        .from('chat-attachments')
+        .remove(filePaths);
+      if (deleteError) throw deleteError;
+      console.log(`🧹 Storage Cleanup: Deleted ${filePaths.length} files from Supabase Storage.`);
+    }
+  } catch (err) {
+    console.error('❌ Storage Cleanup Error:', err);
+  }
+}
+
+// ฟังก์ชันล้างห้องแชทเก่าอัตโนมัติ
+async function cleanupOldChats(customDays = null) {
+  try {
+    const settings = await getSettings();
+    const isEnabled = settings.chat_auto_delete_enabled === 'true';
+    const daysStr = customDays !== null ? String(customDays) : settings.chat_auto_delete_days;
+    const days = parseInt(daysStr);
+
+    if ((isEnabled || customDays !== null) && !isNaN(days) && days > 0) {
+      const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      console.log(`🧹 Chat Cleanup: Deleting chat rooms with no activity since ${cutoffDate} (${days} days)`);
+      
+      // ดึงห้องแชทที่จะลบ
+      const { data: roomsToDelete, error: fetchErr } = await supabase
+        .from('chat_rooms')
+        .select('id')
+        .lt('updated_at', cutoffDate);
+
+      if (fetchErr) throw fetchErr;
+      if (roomsToDelete && roomsToDelete.length > 0) {
+        const ids = roomsToDelete.map(r => r.id);
+        // ลบรูปภาพออกจาก Storage
+        await deleteChatRoomFiles(ids);
+        
+        // ลบจาก Database
+        const { error } = await supabase
+          .from('chat_rooms')
+          .delete()
+          .in('id', ids);
+
+        if (error) throw error;
+        console.log(`🧹 Chat Cleanup: Removed ${ids.length} old chat rooms.`);
+        return ids.length;
+      }
+    }
+  } catch (err) {
+    console.error('❌ Error during chat cleanup:', err);
+  }
+  return 0;
+}
+
+// รันตรวจแชทหมดอายุอัตโนมัติทุกๆ 24 ชั่วโมง
+setInterval(() => {
+  cleanupOldChats();
+}, 24 * 60 * 60 * 1000);
+
+// Middleware: ตรวจสอบ JWT แบบไม่บังคับ (Optional Auth)
+function optionalAuthMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, ACTUAL_JWT_SECRET);
+      req.user = decoded; // { id, username, role }
+    } catch (err) {
+      // ดำเนินการต่อในฐานะผู้เยี่ยมชม (guest)
+    }
+  }
+  next();
+}
+
+// 1. GET /api/chat/config — ดึงการตั้งค่า Supabase
+app.get('/api/chat/config', (req, res) => {
+  res.json({
+    supabaseUrl: process.env.SUPABASE_URL,
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY
+  });
+});
+
+// 2. POST /api/chat/room — สร้าง/ดึงห้องแชทของลูกค้า
+app.post('/api/chat/room', authMiddleware, async (req, res) => {
+  try {
+    let userId = req.user.id;
+
+    const { data: existingRooms, error: findErr } = await supabase
+      .from('chat_rooms')
+      .select('*')
+      .eq('user_id', userId);
+      
+    if (findErr) throw findErr;
+
+    if (existingRooms && existingRooms.length > 0) {
+      return res.json({ room_id: existingRooms[0].id });
+    }
+
+    // สร้างห้องแชทใหม่
+    const { data: newRoom, error: createErr } = await supabase
+      .from('chat_rooms')
+      .insert({
+        user_id: userId
+      })
+      .select()
+      .single();
+
+    if (createErr) throw createErr;
+    res.json({ room_id: newRoom.id });
+  } catch (err) {
+    console.error('Create/get chat room error:', err);
+    res.status(500).json({ error: 'ไม่สามารถเปิดห้องแชทได้' });
+  }
+});
+
+// 3. GET /api/chat/history — ดึงประวัติการแชท
+app.get('/api/chat/history', authMiddleware, async (req, res) => {
+  try {
+    const { room_id } = req.query;
+    if (!room_id) {
+      return res.status(400).json({ error: 'กรุณาระบุ room_id' });
+    }
+
+    const { data: room, error: roomErr } = await supabase
+      .from('chat_rooms')
+      .select('*')
+      .eq('id', room_id)
+      .single();
+
+    if (roomErr || !room) {
+      return res.status(404).json({ error: 'ไม่พบห้องแชท' });
+    }
+
+    // ตรวจสอบสิทธิ์ (แอดมินดูได้หมด, เจ้าของห้องเท่านั้นที่จะดูได้)
+    const isAdmin = req.user.role === 'admin';
+    if (!isAdmin) {
+      const isOwnerUser = room.user_id === req.user.id;
+      if (!isOwnerUser) {
+        return res.status(403).json({ error: 'คุณไม่มีสิทธิ์เข้าถึงประวัติการคุยในห้องนี้' });
+      }
+    }
+
+    const { data: messages, error: msgErr } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('room_id', room_id)
+      .order('created_at', { ascending: true });
+
+    if (msgErr) throw msgErr;
+    res.json({ messages });
+  } catch (err) {
+    console.error('Get chat history error:', err);
+    res.status(500).json({ error: 'ไม่สามารถดึงประวัติข้อความแชทได้' });
+  }
+});
+
+// ตั้งค่า Multer Memory Storage สำหรับอัปเดตรูปแชท
+const multerMemory = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+});
+
+// 4. POST /api/chat/upload — อัปเดตรูปแชทไปที่ Supabase Storage
+app.post('/api/chat/upload', authMiddleware, multerMemory.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'กรุณาอัปโหลดไฟล์ภาพ' });
+    }
+
+    const file = req.file;
+    const fileExt = path.extname(file.originalname) || '.jpg';
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}${fileExt}`;
+    const filePath = `${req.user.id}/${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from('chat-attachments')
+      .upload(filePath, file.buffer, {
+        contentType: file.mimetype,
+        upsert: true
+      });
+
+    if (error) throw error;
+
+    const { data: publicUrlData } = supabase.storage
+      .from('chat-attachments')
+      .getPublicUrl(filePath);
+
+    const imageUrl = publicUrlData.publicUrl;
+    res.json({ success: true, imageUrl });
+  } catch (err) {
+    console.error('Chat image upload error:', err);
+    res.status(500).json({ error: 'ไม่สามารถอัปโหลดรูปภาพได้' });
+  }
+});
+
+// 5. POST /api/chat/send — ส่งข้อความใหม่
+app.post('/api/chat/send', authMiddleware, async (req, res) => {
+  try {
+    const { room_id, message, image_url } = req.body;
+    if (!room_id || ((!message || message.trim() === '') && !image_url)) {
+      return res.status(400).json({ error: 'กรุณาระบุรหัสห้องแชทและข้อความหรือรูปภาพ' });
+    }
+
+    const { data: room, error: roomErr } = await supabase
+      .from('chat_rooms')
+      .select('*')
+      .eq('id', room_id)
+      .single();
+
+    if (roomErr || !room) {
+      return res.status(404).json({ error: 'ไม่พบห้องแชท' });
+    }
+
+    const isAdmin = req.user.role === 'admin';
+    let senderName = req.user.username;
+    let senderRole = 'customer';
+    let senderId = req.user.id;
+
+    if (isAdmin) {
+      senderRole = 'admin';
+    } else {
+      // ตรวจสอบสิทธิ์ส่งข้อความ
+      const isOwnerUser = room.user_id === req.user.id;
+      if (!isOwnerUser) {
+        return res.status(403).json({ error: 'คุณไม่มีสิทธิ์ส่งข้อความในห้องนี้' });
+      }
+    }
+
+    const { data: msgData, error: sendErr } = await supabase
+      .from('chat_messages')
+      .insert({
+        room_id,
+        sender_id: senderId,
+        sender_name: senderName,
+        sender_role: senderRole,
+        message: message ? message.trim() : null,
+        image_url: image_url || null
+      })
+      .select()
+      .single();
+
+    if (sendErr) throw sendErr;
+
+    // อัปเดตเวลาเคลื่อนไหวล่าสุดของห้องแชท
+    await supabase
+      .from('chat_rooms')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', room_id);
+
+    res.json({ success: true, message: msgData });
+  } catch (err) {
+    console.error('Send chat message error:', err);
+    res.status(500).json({ error: 'ไม่สามารถส่งข้อความได้' });
+  }
+});
+
+// 6. GET /api/admin/chat/rooms — ดึงรายการห้องแชททั้งหมดสำหรับแอดมิน
+app.get('/api/admin/chat/rooms', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { data: rooms, error: roomErr } = await supabase
+      .from('chat_rooms')
+      .select(`
+        *,
+        users ( username )
+      `)
+      .order('updated_at', { ascending: false });
+
+    if (roomErr) throw roomErr;
+
+    const formattedRooms = await Promise.all(rooms.map(async (room) => {
+      const { data: latestMsg } = await supabase
+        .from('chat_messages')
+        .select('message, image_url, created_at')
+        .eq('room_id', room.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      let lastMsgText = '(ไม่มีข้อความ)';
+      if (latestMsg) {
+        if (latestMsg.message) lastMsgText = latestMsg.message;
+        else if (latestMsg.image_url) lastMsgText = '[ส่งรูปภาพ]';
+      }
+
+      return {
+        id: room.id,
+        username: room.users ? room.users.username : 'Unknown User',
+        created_at: room.created_at,
+        updated_at: room.updated_at,
+        last_message: lastMsgText,
+        last_message_time: latestMsg ? latestMsg.created_at : room.updated_at
+      };
+    }));
+
+    res.json({ rooms: formattedRooms });
+  } catch (err) {
+    console.error('Get admin chat rooms error:', err);
+    res.status(500).json({ error: 'ไม่สามารถดึงห้องแชทได้' });
+  }
+});
+
+// 7. DELETE /api/admin/chat/rooms/:id — [แมนนวล] ลบห้องแชท
+app.delete('/api/admin/chat/rooms/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1. ลบไฟล์รูปภาพออกจาก Storage ก่อน
+    await deleteChatRoomFiles([id]);
+
+    // 2. ลบจากฐานข้อมูล
+    const { data, error } = await supabase
+      .from('chat_rooms')
+      .delete()
+      .eq('id', id)
+      .select();
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบห้องแชทที่ต้องการลบ' });
+    }
+
+    res.json({ success: true, message: 'ลบห้องสนทนาเรียบร้อยแล้ว' });
+  } catch (err) {
+    console.error('Delete chat room error:', err);
+    res.status(500).json({ error: 'ไม่สามารถลบห้องสนทนาได้' });
+  }
+});
+
+// 7. POST /api/admin/chat/cleanup-now — [แมนนวล] สั่งล้างแชทเก่าทันที
+app.post('/api/admin/chat/cleanup-now', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { days } = req.body;
+    const daysNum = parseInt(days);
+    if (isNaN(daysNum) || daysNum <= 0) {
+      return res.status(400).json({ error: 'กรุณาระบุจำนวนวันให้ถูกต้อง (ต้องมากกว่า 0 วัน)' });
+    }
+
+    const removedCount = await cleanupOldChats(daysNum);
+    res.json({ success: true, message: `ล้างประวัติแชทเก่าสำเร็จ ลบห้องแชททั้งหมด ${removedCount} ห้อง` });
+  } catch (err) {
+    console.error('Manual chat cleanup error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการล้างข้อมูลแชท' });
+  }
+});
+
+// 8. PUT /api/admin/chat/settings — ตั้งค่าการลบแชทอัตโนมัติ
+app.put('/api/admin/chat/settings', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { chat_auto_delete_enabled, chat_auto_delete_days } = req.body;
+    
+    if (chat_auto_delete_days !== undefined) {
+      const days = parseInt(chat_auto_delete_days);
+      if (isNaN(days) || days <= 0) {
+        return res.status(400).json({ error: 'จำนวนวันในการลบต้องเป็นตัวเลขที่มากกว่า 0' });
+      }
+    }
+
+    const settings = await getSettings();
+    if (chat_auto_delete_enabled !== undefined) {
+      settings.chat_auto_delete_enabled = String(chat_auto_delete_enabled === true || chat_auto_delete_enabled === 'true');
+    }
+    if (chat_auto_delete_days !== undefined) {
+      settings.chat_auto_delete_days = String(chat_auto_delete_days);
+    }
+
+    await updateSettings(settings);
+    res.json({ success: true, message: 'บันทึกการตั้งค่าล้างแชทสำเร็จ', settings });
+  } catch (err) {
+    console.error('Update chat settings error:', err);
+    res.status(500).json({ error: 'ไม่สามารถบันทึกการตั้งค่าได้' });
+  }
+});
+
+// =============================================
 // AUTO-RELEASE: ตรวจสอบเครื่องหมดเวลาอัตโนมัติ
 // =============================================
 async function autoReleaseExpiredMachines() {
@@ -2788,7 +3549,7 @@ async function autoReleaseExpiredMachines() {
     const now = new Date().toISOString();
     const { data: expired } = await supabase
       .from('machines')
-      .select('id, name, tuya_device_id')
+      .select('*')
       .eq('status', 'in_use')
       .lt('session_end_time', now);
 
@@ -2822,6 +3583,9 @@ async function autoReleaseExpiredMachines() {
           .eq('status', 'active');
 
         console.log(`🔄 Auto-released to clearing: ${machine.name} (ID: ${machine.id})`);
+        
+        // ส่งการแจ้งเตือน Discord (รอบที่ 1: หมดเวลาเช่า)
+        await sendDiscordExpiryNotification(machine);
       }
     }
   } catch (err) {
@@ -2854,5 +3618,7 @@ app.listen(PORT, () => {
   `);
   // รัน auto-release ครั้งแรกเมื่อ server เริ่ม
   autoReleaseExpiredMachines();
+  // รันระบบล้างห้องแชทครั้งแรกเมื่อ server เริ่ม
+  cleanupOldChats();
 });
 

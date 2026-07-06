@@ -42,7 +42,9 @@ async function initAdmin() {
     setupElectricityForm();
     setupShopAccountForm();
     setupSlipSettingsForm();
+    setupChatCleanupSettingsForm();
     await loadShopAccounts();
+    await initAdminChat();
   } catch (err) {
     document.getElementById('accessDenied').classList.remove('hidden');
     document.getElementById('adminContent').classList.add('hidden');
@@ -51,10 +53,13 @@ async function initAdmin() {
 
 // --- Tab Switching ---
 function switchAdminTab(tab) {
-  ['machines', 'rentals', 'topups', 'users', 'settings', 'finance'].forEach(t => {
+  ['machines', 'rentals', 'topups', 'users', 'settings', 'finance', 'chat'].forEach(t => {
     document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
     document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
   });
+  if (tab === 'chat') {
+    refreshChatRooms();
+  }
 }
 
 // --- Stats ---
@@ -507,9 +512,13 @@ async function loadAdminUsers() {
                     💰 จัดการเงิน
                   </button>
                   ${u.active_machine 
-                    ? `<button onclick="openUserTimeModal('${u.id}', '${u.username}', '${u.active_machine.name}', '${u.active_machine.session_end_time}')"
+                    ? `<button onclick="openUserTimeModal('${u.id}', '${u.username}', '${u.active_machine.name}', '${u.active_machine.session_end_time}', 'extend')"
                                class="px-2 py-1 text-xs bg-green-500/10 text-green-400 rounded border border-green-500/20 hover:bg-green-500/20 transition flex items-center gap-1 font-semibold">
                          ⏰ เพิ่มเวลา
+                       </button>
+                       <button onclick="openUserTimeModal('${u.id}', '${u.username}', '${u.active_machine.name}', '${u.active_machine.session_end_time}', 'reduce')"
+                               class="px-2 py-1 text-xs bg-red-500/10 text-red-400 rounded border border-red-500/20 hover:bg-red-500/20 transition flex items-center gap-1 font-semibold">
+                         ⏰ ลดเวลา
                        </button>`
                     : ''
                   }
@@ -580,13 +589,25 @@ function setupUserCreditForm() {
   });
 }
 
-function openUserTimeModal(userId, username, machineName, sessionEndTime) {
+function openUserTimeModal(userId, username, machineName, sessionEndTime, mode = 'extend') {
   document.getElementById('ut_user_id').value = userId;
+  document.getElementById('ut_mode').value = mode;
   document.getElementById('ut_username').textContent = username;
   document.getElementById('ut_machinename').textContent = machineName;
   document.getElementById('ut_current_end').textContent = formatDate(sessionEndTime);
   document.getElementById('ut_duration').value = '';
   document.getElementById('ut_unit').value = 'hours';
+
+  if (mode === 'reduce') {
+    document.getElementById('ut_title').textContent = '⏰ ลดเวลาเช่าเครื่อง';
+    document.getElementById('ut_duration_label').textContent = 'จำนวนเวลาที่ต้องการลด *';
+    document.getElementById('userTimeSubmitBtn').textContent = '💾 ยืนยันลดเวลา';
+  } else {
+    document.getElementById('ut_title').textContent = '⏰ เพิ่มเวลาเช่าเครื่อง';
+    document.getElementById('ut_duration_label').textContent = 'จำนวนเวลาที่ต้องการเพิ่ม *';
+    document.getElementById('userTimeSubmitBtn').textContent = '💾 ยืนยันเพิ่มเวลา';
+  }
+
   showModal('userTimeModal');
 }
 
@@ -598,29 +619,43 @@ function setupUserTimeForm() {
     e.preventDefault();
     const btn = document.getElementById('userTimeSubmitBtn');
     btn.disabled = true;
+    const originalText = btn.textContent;
     btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px"></div>';
 
     const userId = document.getElementById('ut_user_id').value;
+    const mode = document.getElementById('ut_mode').value;
     const duration = document.getElementById('ut_duration').value;
     const unit = document.getElementById('ut_unit').value;
 
+    const endpoint = mode === 'reduce' 
+      ? `/api/admin/users/${userId}/reduce-session`
+      : `/api/admin/users/${userId}/extend-session`;
+
+    const successMsg = mode === 'reduce'
+      ? 'ลดเวลาเช่าเครื่องสำเร็จ'
+      : 'เพิ่มเวลาเช่าเครื่องสำเร็จ';
+
+    const errorMsg = mode === 'reduce'
+      ? 'เกิดข้อผิดพลาดในการลดเวลาเช่าเครื่อง'
+      : 'เกิดข้อผิดพลาดในการเพิ่มเวลาเช่าเครื่อง';
+
     try {
-      const response = await apiFetch(`/api/admin/users/${userId}/extend-session`, {
+      const response = await apiFetch(endpoint, {
         method: 'POST',
         body: { duration, unit }
       });
 
-      showToast(response.message || 'เพิ่มเวลาเช่าเครื่องสำเร็จ', 'success');
+      showToast(response.message || successMsg, 'success');
       hideModal('userTimeModal');
       await Promise.all([
         loadAdminUsers(),
         loadAdminStats()
       ]);
     } catch (err) {
-      showToast(err.error || 'เกิดข้อผิดพลาดในการเพิ่มเวลาเช่าเครื่อง', 'error');
+      showToast(err.error || errorMsg, 'error');
     } finally {
       btn.disabled = false;
-      btn.textContent = '💾 ยืนยันเพิ่มเวลา';
+      btn.textContent = originalText;
     }
   });
 }
@@ -665,6 +700,60 @@ async function loadAdminSettings() {
     // โหลดค่าอายุสลิปสูงสุด
     const slipMaxAgeInput = document.getElementById('setting_slip_max_age');
     if (slipMaxAgeInput) slipMaxAgeInput.value = data.slip_max_age_minutes || '5';
+
+    // โหลดค่าป๊อปอัพโฆษณา
+    const popupCheckbox = document.getElementById('setting_popup_enabled');
+    const popupImageUrlInput = document.getElementById('setting_popup_image_url');
+    const popupSettingsDetails = document.getElementById('popup_settings_details');
+    const popupPreview = document.getElementById('popup_preview');
+    const popupPreviewPlaceholder = document.getElementById('popup_preview_placeholder');
+
+    if (popupCheckbox) {
+      popupCheckbox.checked = data.popup_enabled === 'true';
+      if (popupSettingsDetails) {
+        if (popupCheckbox.checked) {
+          popupSettingsDetails.classList.remove('hidden');
+        } else {
+          popupSettingsDetails.classList.add('hidden');
+        }
+      }
+    }
+
+    if (popupImageUrlInput) {
+      popupImageUrlInput.value = data.popup_image_url || '';
+      if (data.popup_image_url) {
+        if (popupPreview) {
+          popupPreview.src = data.popup_image_url;
+          popupPreview.classList.remove('hidden');
+        }
+        if (popupPreviewPlaceholder) {
+          popupPreviewPlaceholder.classList.add('hidden');
+        }
+      } else {
+        if (popupPreview) {
+          popupPreview.src = '';
+          popupPreview.classList.add('hidden');
+        }
+        if (popupPreviewPlaceholder) {
+          popupPreviewPlaceholder.classList.remove('hidden');
+        }
+      }
+    }
+
+    // โหลดค่าล้างแชทอัตโนมัติ
+    const autoDeleteCheckbox = document.getElementById('setting_chat_auto_delete_enabled');
+    const autoDeleteDaysInput = document.getElementById('setting_chat_auto_delete_days');
+    const daysContainer = document.getElementById('chat_delete_days_container');
+    
+    if (autoDeleteCheckbox) {
+      autoDeleteCheckbox.checked = data.chat_auto_delete_enabled === 'true';
+      if (daysContainer) {
+        daysContainer.classList.toggle('hidden', !autoDeleteCheckbox.checked);
+      }
+    }
+    if (autoDeleteDaysInput) {
+      autoDeleteDaysInput.value = data.chat_auto_delete_days || '30';
+    }
   } catch (err) {
     console.error('Error loading settings:', err);
   }
@@ -682,6 +771,89 @@ function setupSettingsForm() {
         timeRestrictionInputs.classList.remove('hidden');
       } else {
         timeRestrictionInputs.classList.add('hidden');
+      }
+    });
+  }
+
+  // จัดการการสลับแสดง/ซ่อน รายละเอียดการตั้งค่า Pop-up
+  const popupCheckbox = document.getElementById('setting_popup_enabled');
+  const popupSettingsDetails = document.getElementById('popup_settings_details');
+  if (popupCheckbox && popupSettingsDetails) {
+    popupCheckbox.addEventListener('change', () => {
+      if (popupCheckbox.checked) {
+        popupSettingsDetails.classList.remove('hidden');
+      } else {
+        popupSettingsDetails.classList.add('hidden');
+      }
+    });
+  }
+
+  // จัดการการอัปโหลดไฟล์รูปภาพ Pop-up
+  const popupFileInput = document.getElementById('popup_file_input');
+  if (popupFileInput) {
+    popupFileInput.addEventListener('change', async () => {
+      const file = popupFileInput.files[0];
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('popup_image', file);
+
+      try {
+        showToast('กำลังอัปโหลดรูปภาพ...', 'info');
+        const res = await apiFetch('/api/admin/upload-popup', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (res && res.imageUrl) {
+          showToast('อัปโหลดรูปภาพสำเร็จ', 'success');
+          const popupImageUrlInput = document.getElementById('setting_popup_image_url');
+          const popupPreview = document.getElementById('popup_preview');
+          const popupPreviewPlaceholder = document.getElementById('popup_preview_placeholder');
+
+          if (popupImageUrlInput) {
+            popupImageUrlInput.value = res.imageUrl;
+          }
+          if (popupPreview) {
+            popupPreview.src = res.imageUrl;
+            popupPreview.classList.remove('hidden');
+          }
+          if (popupPreviewPlaceholder) {
+            popupPreviewPlaceholder.classList.add('hidden');
+          }
+        }
+      } catch (err) {
+        showToast(err.error || 'อัปโหลดรูปภาพไม่สำเร็จ', 'error');
+      } finally {
+        popupFileInput.value = ''; // Reset file input
+      }
+    });
+  }
+
+  // พรีวิวรูปภาพ Pop-up เมื่อแก้ไขช่อง URL
+  const popupImageUrlInput = document.getElementById('setting_popup_image_url');
+  if (popupImageUrlInput) {
+    popupImageUrlInput.addEventListener('input', () => {
+      const url = popupImageUrlInput.value.trim();
+      const popupPreview = document.getElementById('popup_preview');
+      const popupPreviewPlaceholder = document.getElementById('popup_preview_placeholder');
+
+      if (url) {
+        if (popupPreview) {
+          popupPreview.src = url;
+          popupPreview.classList.remove('hidden');
+        }
+        if (popupPreviewPlaceholder) {
+          popupPreviewPlaceholder.classList.add('hidden');
+        }
+      } else {
+        if (popupPreview) {
+          popupPreview.src = '';
+          popupPreview.classList.add('hidden');
+        }
+        if (popupPreviewPlaceholder) {
+          popupPreviewPlaceholder.classList.remove('hidden');
+        }
       }
     });
   }
@@ -710,6 +882,11 @@ function setupSettingsForm() {
     const topup_restricted_start = restrictedStartInput ? restrictedStartInput.value : '01:00';
     const topup_restricted_end = restrictedEndInput ? restrictedEndInput.value : '03:00';
 
+    const popupCheckbox = document.getElementById('setting_popup_enabled');
+    const popupImageUrlInput = document.getElementById('setting_popup_image_url');
+    const popup_enabled = popupCheckbox && popupCheckbox.checked ? 'true' : 'false';
+    const popup_image_url = popupImageUrlInput ? popupImageUrlInput.value.trim() : '';
+
     try {
       await apiFetch('/api/admin/settings', {
         method: 'PUT',
@@ -722,7 +899,9 @@ function setupSettingsForm() {
           topup_slip_enabled,
           topup_time_restriction_enabled,
           topup_restricted_start,
-          topup_restricted_end
+          topup_restricted_end,
+          popup_enabled,
+          popup_image_url
         }
       });
       showToast('บันทึกการตั้งค่าสำเร็จ', 'success');
@@ -1103,4 +1282,452 @@ function setupSlipSettingsForm() {
       btn.textContent = origText;
     }
   });
+}
+
+// --- LIVE SUPPORT CHAT ADMIN LOGIC ---
+let adminSupabaseClient = null;
+let activeRoomId = null;
+let activeChatSubscription = null;
+
+async function initAdminChat() {
+  try {
+    const configRes = await fetch('/api/chat/config');
+    if (!configRes.ok) throw new Error('Cannot load chat configuration');
+    const config = await configRes.json();
+
+    if (typeof supabase === 'undefined') {
+      await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2');
+    }
+
+    adminSupabaseClient = supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+    setupAdminChatEvents();
+  } catch (err) {
+    console.error('Error initializing admin chat:', err);
+  }
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+async function refreshChatRooms() {
+  try {
+    const res = await apiFetch('/api/admin/chat/rooms');
+    const container = document.getElementById('admin-chat-rooms');
+    if (!container) return;
+
+    container.innerHTML = '';
+    const rooms = res.rooms || [];
+
+    if (rooms.length === 0) {
+      container.innerHTML = '<div class="text-center p-8 text-gray-500 text-sm">ไม่มีห้องแชท</div>';
+      return;
+    }
+
+    rooms.forEach(room => {
+      const activeClass = activeRoomId === room.id ? 'bg-yellow-400/10 border-yellow-400/30' : 'hover:bg-white/5 border-transparent';
+      const time = new Date(room.last_message_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      const div = document.createElement('div');
+      div.className = `p-3 border-b border-white/5 cursor-pointer transition flex justify-between items-center ${activeClass}`;
+      div.id = `room-item-${room.id}`;
+      div.onclick = () => selectChatRoom(room.id, room.username);
+
+      div.innerHTML = `
+        <div class="flex-1 min-w-0 pr-2">
+          <div class="flex justify-between items-center mb-1">
+            <span class="font-bold text-white text-sm truncate">${room.username}</span>
+            <span class="text-[10px] text-gray-500 whitespace-nowrap">${time}</span>
+          </div>
+          <p class="text-xs text-gray-400 truncate">${room.last_message}</p>
+        </div>
+        <div class="text-xs text-gray-500 font-bold">
+          <i class="fas fa-chevron-right"></i>
+        </div>
+      `;
+      container.appendChild(div);
+    });
+  } catch (err) {
+    console.error('Error refreshing chat rooms:', err);
+    showToast('ไม่สามารถโหลดรายการห้องแชทได้', 'error');
+  }
+}
+
+async function selectChatRoom(roomId, username) {
+  activeRoomId = roomId;
+  
+  const roomsContainer = document.getElementById('admin-chat-rooms');
+  if (roomsContainer) {
+    Array.from(roomsContainer.children).forEach(child => {
+      child.classList.remove('bg-yellow-400/10', 'border-yellow-400/30');
+      child.classList.add('border-transparent');
+    });
+    const activeItem = document.getElementById(`room-item-${roomId}`);
+    if (activeItem) {
+      activeItem.classList.remove('border-transparent');
+      activeItem.classList.add('bg-yellow-400/10', 'border-yellow-400/30');
+    }
+  }
+
+  document.getElementById('admin-chat-placeholder').classList.add('hidden');
+  document.getElementById('admin-chat-active-panel').classList.remove('hidden');
+  
+  document.getElementById('active-chat-username').textContent = username;
+  document.getElementById('active-chat-id').textContent = `Room ID: ${roomId}`;
+
+  await loadAdminChatHistory(roomId);
+  subscribeToActiveRoom(roomId);
+}
+
+async function loadAdminChatHistory(roomId) {
+  try {
+    const res = await apiFetch(`/api/chat/history?room_id=${roomId}`);
+    const messagesContainer = document.getElementById('admin-chat-messages');
+    if (!messagesContainer) return;
+
+    messagesContainer.innerHTML = '';
+    const messages = res.messages || [];
+
+    messages.forEach(msg => {
+      appendAdminMessage(msg, false);
+    });
+    scrollAdminChatToBottom();
+  } catch (err) {
+    console.error('Error loading history:', err);
+    showToast('ไม่สามารถดึงประวัติข้อความได้', 'error');
+  }
+}
+
+function subscribeToActiveRoom(roomId) {
+  if (activeChatSubscription) {
+    activeChatSubscription.unsubscribe();
+  }
+
+  activeChatSubscription = adminSupabaseClient
+    .channel(`public:chat_messages:room:${roomId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'chat_messages',
+        filter: `room_id=eq.${roomId}`
+      },
+      (payload) => {
+        const msg = payload.new;
+        appendAdminMessage(msg, true);
+        refreshChatRooms();
+      }
+    )
+    .subscribe();
+}
+
+function appendAdminMessage(msg, animate = true) {
+  const messagesContainer = document.getElementById('admin-chat-messages');
+  if (!messagesContainer) return;
+
+  if (document.getElementById(`admin-msg-${msg.id}`)) return;
+
+  const div = document.createElement('div');
+  div.id = `admin-msg-${msg.id}`;
+  div.className = `flex flex-col max-w-[80%] ${msg.sender_role === 'admin' ? 'self-end' : 'self-start'}`;
+
+  const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const isSelf = msg.sender_role === 'admin';
+  const nameColor = isSelf ? 'text-pink-400' : 'text-cyan-400';
+  const bubbleBg = isSelf 
+    ? 'background: rgba(255, 0, 85, 0.1); border: 1px solid var(--cyber-pink); border-radius: 8px 8px 0px 8px; box-shadow: 0 0 8px rgba(255, 0, 85, 0.15);' 
+    : 'background: rgba(0, 240, 255, 0.1); border: 1px solid var(--cyber-cyan); border-radius: 8px 8px 8px 0px; box-shadow: 0 0 8px rgba(0, 240, 255, 0.15);';
+
+  let messageBody = '';
+  if (msg.image_url) {
+    messageBody = `
+      <div class="relative mb-1">
+        <img src="${msg.image_url}" alt="Attachment" class="max-w-full max-h-[160px] rounded border border-white/10 cursor-pointer hover:opacity-85 transition" onclick="window.open('${msg.image_url}', '_blank')">
+      </div>
+    `;
+    if (msg.message) {
+      messageBody += `<div>${escapeHTML(msg.message)}</div>`;
+    }
+  } else {
+    messageBody = escapeHTML(msg.message);
+  }
+
+  div.innerHTML = `
+    <div class="flex gap-2 text-[10px] text-gray-500 mb-1 ${isSelf ? 'justify-end' : 'justify-start'}">
+      <span class="font-bold ${nameColor}">${msg.sender_name}</span>
+      <span>${time}</span>
+    </div>
+    <div class="p-2.5 text-xs text-white break-words" style="${bubbleBg}">
+      ${messageBody}
+    </div>
+  `;
+
+  messagesContainer.appendChild(div);
+  if (animate) {
+    scrollAdminChatToBottom();
+  }
+}
+
+async function sendAdminMessage(text = null, imageUrl = null) {
+  const input = document.getElementById('admin-chat-input');
+  if (!input || !activeRoomId) return;
+
+  const textVal = text !== null ? text : input.value.trim();
+  if (textVal === '' && !imageUrl) return;
+
+  try {
+    await apiFetch('/api/chat/send', {
+      method: 'POST',
+      body: {
+        room_id: activeRoomId,
+        message: textVal ? textVal : null,
+        image_url: imageUrl
+      }
+    });
+    if (text === null) {
+      input.value = '';
+      input.focus();
+    }
+  } catch (err) {
+    console.error('Error sending message:', err);
+    showToast('ส่งข้อความไม่สำเร็จ: ' + (err.error || err), 'error');
+  }
+}
+
+// Client-side Canvas Image Compression for Admin
+function compressAdminImage(file, maxWidth = 1000, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error('Canvas compression failed'));
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = reject;
+    };
+    reader.onerror = reject;
+  });
+}
+
+// Handle Admin Image Upload
+async function handleAdminImageUpload(file) {
+  if (!activeRoomId) return;
+  const token = localStorage.getItem('cyber_token');
+  const input = document.getElementById('admin-chat-input');
+  const origPlaceholder = input.placeholder;
+
+  input.disabled = true;
+  input.placeholder = '📤 กำลังบีบอัดและส่งรูปภาพ...';
+
+  try {
+    const compressedBlob = await compressAdminImage(file, 1000, 0.7);
+    const formData = new FormData();
+    formData.append('image', compressedBlob, 'image.jpg');
+
+    const uploadRes = await fetch('/api/chat/upload', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData
+    });
+
+    if (!uploadRes.ok) {
+      const errData = await uploadRes.json();
+      throw new Error(errData.error || 'Failed to upload image');
+    }
+
+    const data = await uploadRes.json();
+    await sendAdminMessage(null, data.imageUrl);
+  } catch (err) {
+    console.error('Admin image upload failed:', err);
+    showToast('อัปโหลดรูปภาพล้มเหลว: ' + err.message, 'error');
+  } finally {
+    input.disabled = false;
+    input.placeholder = origPlaceholder;
+    input.focus();
+  }
+}
+
+function setupAdminChatEvents() {
+  const form = document.getElementById('admin-chat-input-form');
+  if (form) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      sendAdminMessage();
+    });
+  }
+
+  const fileInput = document.getElementById('admin-chat-file-input');
+  const attachBtn = document.getElementById('admin-chat-attach-btn');
+  const input = document.getElementById('admin-chat-input');
+
+  if (attachBtn && fileInput) {
+    attachBtn.addEventListener('click', () => {
+      if (!activeRoomId || input.disabled) return;
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        showToast('รองรับเฉพาะไฟล์รูปภาพเท่านั้น', 'error');
+        fileInput.value = '';
+        return;
+      }
+      await handleAdminImageUpload(file);
+      fileInput.value = '';
+    });
+  }
+
+  const deleteBtn = document.getElementById('admin-delete-chat-room-btn');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      if (!activeRoomId) return;
+      if (!confirm('คุณต้องการลบห้องสนทนานี้และประวัติทั้งหมดใช่หรือไม่? (การกระทำนี้ไม่สามารถย้อนกลับได้)')) return;
+
+      try {
+        await apiFetch(`/api/admin/chat/rooms/${activeRoomId}`, {
+          method: 'DELETE'
+        });
+        showToast('ลบห้องสนทนาสำเร็จ', 'success');
+        
+        activeRoomId = null;
+        if (activeChatSubscription) {
+          activeChatSubscription.unsubscribe();
+          activeChatSubscription = null;
+        }
+        document.getElementById('admin-chat-placeholder').classList.remove('hidden');
+        document.getElementById('admin-chat-active-panel').classList.add('hidden');
+        refreshChatRooms();
+      } catch (err) {
+        showToast('ลบห้องสนทนาไม่สำเร็จ: ' + (err.error || err), 'error');
+      }
+    });
+  }
+}
+
+function setupChatCleanupSettingsForm() {
+  const autoDeleteCheckbox = document.getElementById('setting_chat_auto_delete_enabled');
+  const daysContainer = document.getElementById('chat_delete_days_container');
+  if (autoDeleteCheckbox && daysContainer) {
+    autoDeleteCheckbox.addEventListener('change', () => {
+      daysContainer.classList.toggle('hidden', !autoDeleteCheckbox.checked);
+    });
+  }
+
+  const settingsForm = document.getElementById('chatCleanupSettingsForm');
+  if (settingsForm) {
+    settingsForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('chatSettingsBtn');
+      btn.disabled = true;
+      const origText = btn.textContent;
+      btn.innerHTML = '<div class="spinner mx-auto" style="width:18px;height:18px;border-width:2px"></div>';
+
+      const enabled = autoDeleteCheckbox.checked;
+      const days = document.getElementById('setting_chat_auto_delete_days').value;
+
+      try {
+        await apiFetch('/api/admin/chat/settings', {
+          method: 'PUT',
+          body: {
+            chat_auto_delete_enabled: enabled,
+            chat_auto_delete_days: days
+          }
+        });
+        showToast('บันทึกตั้งค่าการล้างข้อมูลแชทสำเร็จ', 'success');
+      } catch (err) {
+        showToast(err.error || 'เกิดข้อผิดพลาดในการบันทึก', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    });
+  }
+
+  const manualBtn = document.getElementById('manualChatCleanupBtn');
+  if (manualBtn) {
+    manualBtn.addEventListener('click', async () => {
+      const daysInput = document.getElementById('manual_chat_delete_days');
+      const days = parseInt(daysInput.value);
+      if (isNaN(days) || days <= 0) {
+        showToast('กรุณาระบุจำนวนวันให้ถูกต้อง', 'error');
+        return;
+      }
+
+      if (!confirm(`คุณแน่ใจหรือไม่ที่จะลบประวัติการแชททั้งหมดที่ไม่มีความเคลื่อนไหวเกิน ${days} วัน? (ไม่สามารถกู้คืนข้อมูลได้)`)) return;
+
+      manualBtn.disabled = true;
+      const origText = manualBtn.textContent;
+      manualBtn.innerHTML = '<div class="spinner mx-auto" style="width:18px;height:18px;border-width:2px"></div>';
+
+      try {
+        const res = await apiFetch('/api/admin/chat/cleanup-now', {
+          method: 'POST',
+          body: { days }
+        });
+        showToast(res.message, 'success');
+        if (activeRoomId) {
+          activeRoomId = null;
+          document.getElementById('admin-chat-placeholder').classList.remove('hidden');
+          document.getElementById('admin-chat-active-panel').classList.add('hidden');
+        }
+        refreshChatRooms();
+      } catch (err) {
+        showToast(err.error || 'เกิดข้อผิดพลาดในการล้างข้อมูล', 'error');
+      } finally {
+        manualBtn.disabled = false;
+        manualBtn.textContent = origText;
+      }
+    });
+  }
+}
+
+function scrollAdminChatToBottom() {
+  const container = document.getElementById('admin-chat-messages');
+  if (container) {
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function escapeHTML(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }

@@ -17,5 +17,7 @@ INSERT INTO settings (key, value) VALUES
 ('topup_slip_enabled', 'true'),
 ('topup_time_restriction_enabled', 'false'),
 ('topup_restricted_start', '01:00'),
-('topup_restricted_end', '03:00')
+('topup_restricted_end', '03:00'),
+('popup_enabled', 'false'),
+('popup_image_url', '')
 ON CONFLICT (key) DO NOTHING;

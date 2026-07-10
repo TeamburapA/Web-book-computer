@@ -279,89 +279,139 @@ async function dashReleaseMachine(machineId) {
   }
 }
 
+let dashRentalsList = [];
+let dashRentalsPage = 1;
+
 // --- ประวัติการเช่า ---
 async function loadRentalHistory() {
   const container = document.getElementById('rentalHistory');
   try {
     const data = await apiFetch('/api/my-rentals');
-    if (!data.rentals || data.rentals.length === 0) {
-      container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีประวัติการเช่า</div>`;
-      return;
-    }
-
-    container.innerHTML = `
-      <table class="cyber-table">
-        <thead>
-          <tr>
-            <th>เครื่อง</th>
-            <th>ระยะเวลา</th>
-            <th>ราคา</th>
-            <th>เริ่มเช่า</th>
-            <th>สิ้นสุด</th>
-            <th>สถานะ</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.rentals.map(r => `
-            <tr>
-              <td class="font-semibold text-white whitespace-nowrap">${r.machine_name}</td>
-              <td>${
-                r.duration_hours % 720 === 0 ? (r.duration_hours / 720) + ' เดือน' :
-                r.duration_hours % 168 === 0 ? (r.duration_hours / 168) + ' สัปดาห์' :
-                r.duration_hours >= 24 ? Math.floor(r.duration_hours / 24) + ' วัน' :
-                r.duration_hours + ' ชม.'
-              }</td>
-              <td class="text-yellow-400 font-bold">฿ ${formatCurrency(r.total_price)}</td>
-              <td class="text-xs whitespace-nowrap">${formatDate(r.started_at)}</td>
-              <td class="text-xs whitespace-nowrap">${formatDate(r.ended_at)}</td>
-              <td>${statusBadge(r.status)}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    `;
+    dashRentalsList = data.rentals || [];
+    dashRentalsPage = 1;
+    renderRentalHistory();
   } catch (err) {
     container.innerHTML = `<div class="text-center py-8 text-red-400">❌ โหลดข้อมูลไม่สำเร็จ</div>`;
   }
 }
+
+function changeDashRentalsPage(page) {
+  dashRentalsPage = page;
+  renderRentalHistory();
+}
+
+function renderRentalHistory() {
+  const container = document.getElementById('rentalHistory');
+  if (!container) return;
+  if (dashRentalsList.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีประวัติการเช่า</div>`;
+    return;
+  }
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(dashRentalsList.length / itemsPerPage);
+  if (dashRentalsPage > totalPages) dashRentalsPage = totalPages;
+  if (dashRentalsPage < 1) dashRentalsPage = 1;
+
+  const startIdx = (dashRentalsPage - 1) * itemsPerPage;
+  const paginatedItems = dashRentalsList.slice(startIdx, startIdx + itemsPerPage);
+
+  container.innerHTML = `
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>เครื่อง</th>
+          <th>ระยะเวลา</th>
+          <th>ราคา</th>
+          <th>เริ่มเช่า</th>
+          <th>สิ้นสุด</th>
+          <th>สถานะ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${paginatedItems.map(r => `
+          <tr>
+            <td class="font-semibold text-white whitespace-nowrap">${r.machine_name}</td>
+            <td>${
+              r.duration_hours % 720 === 0 ? (r.duration_hours / 720) + ' เดือน' :
+              r.duration_hours % 168 === 0 ? (r.duration_hours / 168) + ' สัปดาห์' :
+              r.duration_hours >= 24 ? Math.floor(r.duration_hours / 24) + ' วัน' :
+              r.duration_hours + ' ชม.'
+            }</td>
+            <td class="text-yellow-400 font-bold">฿ ${formatCurrency(r.total_price)}</td>
+            <td class="text-xs whitespace-nowrap">${formatDate(r.started_at)}</td>
+            <td class="text-xs whitespace-nowrap">${formatDate(r.ended_at)}</td>
+            <td>${statusBadge(r.status)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ${renderPaginationControls(dashRentalsPage, totalPages, 'changeDashRentalsPage')}
+  `;
+}
+
+let dashTopupsList = [];
+let dashTopupsPage = 1;
 
 // --- ประวัติเติมเงิน ---
 async function loadDashTopupHistory() {
   const container = document.getElementById('dashTopupHistory');
   try {
     const data = await apiFetch('/api/my-topups');
-    if (!data.topups || data.topups.length === 0) {
-      container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีประวัติเติมเงิน</div>`;
-      return;
-    }
-
-    container.innerHTML = `
-      <table class="cyber-table">
-        <thead>
-          <tr>
-            <th>วันที่</th>
-            <th>จำนวนเงิน</th>
-            <th>Ref</th>
-            <th>สถานะ</th>
-            <th>หมายเหตุ</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.topups.map(t => `
-            <tr>
-              <td class="whitespace-nowrap">${formatDate(t.created_at)}</td>
-              <td class="font-bold text-yellow-400">฿ ${formatCurrency(t.amount)}</td>
-              <td class="text-xs font-mono text-gray-500">${t.transaction_ref || '-'}</td>
-              <td>${statusBadge(t.status)}</td>
-              <td class="text-xs text-gray-500">${t.note || '-'}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    `;
+    dashTopupsList = data.topups || [];
+    dashTopupsPage = 1;
+    renderDashTopupHistory();
   } catch (err) {
     container.innerHTML = `<div class="text-center py-8 text-red-400">❌ โหลดข้อมูลไม่สำเร็จ</div>`;
   }
+}
+
+function changeDashTopupsPage(page) {
+  dashTopupsPage = page;
+  renderDashTopupHistory();
+}
+
+function renderDashTopupHistory() {
+  const container = document.getElementById('dashTopupHistory');
+  if (!container) return;
+  if (dashTopupsList.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีประวัติเติมเงิน</div>`;
+    return;
+  }
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(dashTopupsList.length / itemsPerPage);
+  if (dashTopupsPage > totalPages) dashTopupsPage = totalPages;
+  if (dashTopupsPage < 1) dashTopupsPage = 1;
+
+  const startIdx = (dashTopupsPage - 1) * itemsPerPage;
+  const paginatedItems = dashTopupsList.slice(startIdx, startIdx + itemsPerPage);
+
+  container.innerHTML = `
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>วันที่</th>
+          <th>จำนวนเงิน</th>
+          <th>Ref</th>
+          <th>สถานะ</th>
+          <th>หมายเหตุ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${paginatedItems.map(t => `
+          <tr>
+            <td class="whitespace-nowrap">${formatDate(t.created_at)}</td>
+            <td class="font-bold text-yellow-400">฿ ${formatCurrency(t.amount)}</td>
+            <td class="text-xs font-mono text-gray-500">${t.transaction_ref || '-'}</td>
+            <td>${statusBadge(t.status)}</td>
+            <td class="text-xs text-gray-500">${t.note || '-'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ${renderPaginationControls(dashTopupsPage, totalPages, 'changeDashTopupsPage')}
+  `;
 }
 
 // --- ระบบล็อกปุ่มเปิด/ปิด/รีสตาร์ท (ป้องกันการกดซ้ำ) ---

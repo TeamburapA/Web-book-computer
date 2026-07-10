@@ -265,6 +265,9 @@ function resetUpload() {
   document.getElementById('previewContent').classList.add('hidden');
 }
 
+let topupHistoryList = [];
+let topupHistoryPage = 1;
+
 // --- ประวัติเติมเงิน ---
 async function loadTopupHistory() {
   if (!getToken()) return;
@@ -272,39 +275,60 @@ async function loadTopupHistory() {
   const container = document.getElementById('topupHistory');
   try {
     const data = await apiFetch('/api/my-topups');
-
-    if (!data.topups || data.topups.length === 0) {
-      container.innerHTML = `<div class="text-center py-10 text-gray-500">📭 ยังไม่มีประวัติเติมเงิน</div>`;
-      return;
-    }
-
-    container.innerHTML = `
-      <table class="cyber-table">
-        <thead>
-          <tr>
-            <th>วันที่</th>
-            <th>จำนวนเงิน</th>
-            <th>Ref</th>
-            <th>สถานะ</th>
-            <th>หมายเหตุ</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.topups.map(t => `
-            <tr>
-              <td class="whitespace-nowrap">${formatDate(t.created_at)}</td>
-              <td class="font-bold text-yellow-400">฿ ${formatCurrency(t.amount)}</td>
-              <td class="text-xs font-mono text-gray-500">${t.transaction_ref || '-'}</td>
-              <td>${statusBadge(t.status)}</td>
-              <td class="text-xs text-gray-500">${t.note || '-'}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    `;
+    topupHistoryList = data.topups || [];
+    topupHistoryPage = 1;
+    renderTopupHistory();
   } catch (err) {
     container.innerHTML = `<div class="text-center py-10 text-red-400">❌ โหลดข้อมูลไม่สำเร็จ</div>`;
   }
+}
+
+function changeTopupHistoryPage(page) {
+  topupHistoryPage = page;
+  renderTopupHistory();
+}
+
+function renderTopupHistory() {
+  const container = document.getElementById('topupHistory');
+  if (!container) return;
+  if (topupHistoryList.length === 0) {
+    container.innerHTML = `<div class="text-center py-10 text-gray-500">📭 ยังไม่มีประวัติเติมเงิน</div>`;
+    return;
+  }
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(topupHistoryList.length / itemsPerPage);
+  if (topupHistoryPage > totalPages) topupHistoryPage = totalPages;
+  if (topupHistoryPage < 1) topupHistoryPage = 1;
+
+  const startIdx = (topupHistoryPage - 1) * itemsPerPage;
+  const paginatedItems = topupHistoryList.slice(startIdx, startIdx + itemsPerPage);
+
+  container.innerHTML = `
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>วันที่</th>
+          <th>จำนวนเงิน</th>
+          <th>Ref</th>
+          <th>สถานะ</th>
+          <th>หมายเหตุ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${paginatedItems.map(t => `
+          <tr>
+            <td class="whitespace-nowrap">${formatDate(t.created_at)}</td>
+            <td class="font-bold text-yellow-400">฿ ${formatCurrency(t.amount)}</td>
+            <td class="text-xs font-mono text-gray-500">${t.transaction_ref || '-'}</td>
+            <td>${statusBadge(t.status)}</td>
+            <td class="text-xs text-gray-500">${t.note || '-'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ${renderPaginationControls(topupHistoryPage, totalPages, 'changeTopupHistoryPage')}
+  `;
 }
 
 // --- ฟังก์ชันอัปเดตสถานะปุ่มแท็บโดยไม่กระทบต่อ class 'hidden' ---

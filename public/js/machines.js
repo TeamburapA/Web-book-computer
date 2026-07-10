@@ -63,6 +63,9 @@ function renderMachines(machines) {
     const isWeeklyAllowed = m.allow_weekly !== false && m.allow_weekly !== 'false' && m.allow_weekly !== 0 && m.allow_weekly !== '0';
     const isMonthlyAllowed = m.allow_monthly !== false && m.allow_monthly !== 'false' && m.allow_monthly !== 0 && m.allow_monthly !== '0';
 
+    const allowedPricesCount = [isDailyAllowed, isWeeklyAllowed, isMonthlyAllowed].filter(Boolean).length;
+    const priceClass = allowedPricesCount > 1 ? 'text-xl font-extrabold text-[#facc15]' : 'text-2xl font-extrabold text-[#facc15]';
+
     // Calculate maximum discount percentage for the card badge
     let maxDiscountPct = 0;
     if (isDailyAllowed) {
@@ -153,22 +156,33 @@ function renderMachines(machines) {
             <div class="flex flex-col w-full">
               <span class="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold font-mono">ราคาเช่า</span>
               <div class="flex items-center justify-between w-full mt-0.5">
-                <div class="flex items-baseline gap-0.5">
+                <div class="flex flex-col gap-1">
                   ${isDailyAllowed ? `
-                    <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_day).split('.')[0]}</span>
-                    <span class="text-zinc-500 text-xs font-semibold">/วัน</span>
-                  ` : isWeeklyAllowed ? `
-                    <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_week > 0 ? m.price_per_week : parseFloat(m.price_per_day) * 7).split('.')[0]}</span>
-                    <span class="text-zinc-500 text-xs font-semibold">/สัปดาห์</span>
-                  ` : isMonthlyAllowed ? `
-                    <span class="text-2xl font-extrabold text-[#facc15]">฿${formatCurrency(m.price_per_month > 0 ? m.price_per_month : parseFloat(m.price_per_day) * 30).split('.')[0]}</span>
-                    <span class="text-zinc-500 text-xs font-semibold">/เดือน</span>
-                  ` : `
-                    <span class="text-sm font-bold text-gray-500">ไม่ได้เปิดเช่า</span>
-                  `}
+                    <div class="flex items-baseline gap-0.5">
+                      <span class="${priceClass}">฿${formatCurrency(m.price_per_day).split('.')[0]}</span>
+                      <span class="text-zinc-500 text-xs font-semibold">/วัน</span>
+                    </div>
+                  ` : ''}
+                  ${isWeeklyAllowed ? `
+                    <div class="flex items-baseline gap-0.5">
+                      <span class="${priceClass}">฿${formatCurrency(m.price_per_week > 0 ? m.price_per_week : parseFloat(m.price_per_day) * 7).split('.')[0]}</span>
+                      <span class="text-zinc-500 text-xs font-semibold">/สัปดาห์</span>
+                    </div>
+                  ` : ''}
+                  ${isMonthlyAllowed ? `
+                    <div class="flex items-baseline gap-0.5">
+                      <span class="${priceClass}">฿${formatCurrency(m.price_per_month > 0 ? m.price_per_month : parseFloat(m.price_per_day) * 30).split('.')[0]}</span>
+                      <span class="text-zinc-500 text-xs font-semibold">/เดือน</span>
+                    </div>
+                  ` : ''}
+                  ${(!isDailyAllowed && !isWeeklyAllowed && !isMonthlyAllowed) ? `
+                    <div class="flex items-baseline gap-0.5">
+                      <span class="text-sm font-bold text-gray-500">ไม่ได้เปิดเช่า</span>
+                    </div>
+                  ` : ''}
                 </div>
                 ${maxDiscountPct > 0 ? `
-                  <span class="px-2.5 py-1 text-xs font-black bg-gradient-to-r from-red-500 via-rose-500 to-[#ff0055] text-white rounded shadow-[0_0_10px_rgba(239,68,68,0.5)] uppercase tracking-wider font-mono">ลดสูงสุด ${maxDiscountPct}%</span>
+                  <span class="px-2.5 py-1 text-xs font-black bg-gradient-to-r from-red-500 via-rose-500 to-[#ff0055] text-white rounded shadow-[0_0_10px_rgba(239,68,68,0.5)] uppercase tracking-wider font-mono self-center">ลดสูงสุด ${maxDiscountPct}%</span>
                 ` : ''}
               </div>
             </div>

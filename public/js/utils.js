@@ -295,3 +295,33 @@ function closeAdPopup(permanent = false) {
     hideModal('adPopupModal');
   }
 }
+
+// --- Pagination Controls Helper ---
+function renderPaginationControls(currentPage, totalPages, changePageFuncName) {
+  if (totalPages <= 1) return '';
+  
+  const btnClass = "px-3 py-1.5 text-xs bg-white/5 text-gray-300 rounded border border-white/5 hover:bg-yellow-400/10 hover:text-yellow-400 hover:border-yellow-400/30 transition disabled:opacity-30 disabled:pointer-events-none font-semibold";
+
+  return `
+    <div class="flex items-center justify-between mt-4 p-2 bg-white/5 rounded-lg border border-white/5 flex-col sm:flex-row gap-3">
+      <div class="text-xs text-gray-400 font-medium">
+        แสดงหน้า <span class="text-white font-bold">${currentPage}</span> / <span class="text-white font-bold">${totalPages}</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <button onclick="${changePageFuncName}(1)" ${currentPage === 1 ? 'disabled' : ''} class="${btnClass}">
+          หน้าแรก
+        </button>
+        <button onclick="${changePageFuncName}(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''} class="${btnClass}">
+          ย้อนกลับ
+        </button>
+        <button onclick="${changePageFuncName}(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''} class="${btnClass}">
+          ถัดไป
+        </button>
+        <button onclick="${changePageFuncName}(${totalPages})" ${currentPage === totalPages ? 'disabled' : ''} class="${btnClass}">
+          หน้าสุดท้าย
+        </button>
+      </div>
+    </div>
+  `;
+}
+

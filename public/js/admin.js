@@ -4,6 +4,18 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   initAdmin();
+  document.getElementById('userSearchInput')?.addEventListener('input', () => {
+    adminUsersPage = 1;
+    renderAdminUsers();
+  });
+  document.getElementById('rentalSearchInput')?.addEventListener('input', () => {
+    adminRentalsPage = 1;
+    renderAdminRentals();
+  });
+  document.getElementById('topupSearchInput')?.addEventListener('input', () => {
+    adminTopupsPage = 1;
+    renderAdminTopups();
+  });
 });
 
 async function initAdmin() {
@@ -324,97 +336,176 @@ async function powerMachine(id, action) {
   }
 }
 
+let adminRentalsList = [];
+let adminRentalsPage = 1;
+
 // --- Rental History (Admin) ---
 async function loadAdminRentals() {
   const container = document.getElementById('adminRentalList');
   try {
     const data = await apiFetch('/api/admin/rentals');
-    if (!data.rentals || data.rentals.length === 0) {
-      container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีประวัติการเช่า</div>`;
-      return;
-    }
-
-    container.innerHTML = `
-      <table class="cyber-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>ผู้เช่า</th>
-            <th>เครื่อง</th>
-            <th>ระยะเวลา</th>
-            <th>ราคา</th>
-            <th>เริ่มเช่า</th>
-            <th>สิ้นสุด</th>
-            <th>สถานะ</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.rentals.map(r => `
-            <tr>
-              <td class="font-mono text-xs text-gray-500">#${r.id}</td>
-              <td class="font-semibold text-pink-400">${r.users?.username || '-'}</td>
-              <td class="text-white whitespace-nowrap">${r.machine_name || '-'}</td>
-              <td>${
-                r.duration_hours % 720 === 0 ? (r.duration_hours / 720) + ' เดือน' :
-                r.duration_hours % 168 === 0 ? (r.duration_hours / 168) + ' สัปดาห์' :
-                r.duration_hours >= 24 ? Math.floor(r.duration_hours / 24) + ' วัน' :
-                r.duration_hours + ' ชม.'
-              }</td>
-              <td class="text-yellow-400 font-bold">฿${formatCurrency(r.total_price)}</td>
-              <td class="text-xs whitespace-nowrap">${formatDate(r.started_at)}</td>
-              <td class="text-xs whitespace-nowrap">${formatDate(r.ended_at)}</td>
-              <td>${statusBadge(r.status)}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    `;
+    adminRentalsList = data.rentals || [];
+    adminRentalsPage = 1;
+    renderAdminRentals();
   } catch (err) {
     container.innerHTML = `<div class="text-center py-8 text-red-400">❌ โหลดข้อมูลไม่สำเร็จ</div>`;
   }
 }
+
+function changeAdminRentalsPage(page) {
+  adminRentalsPage = page;
+  renderAdminRentals();
+}
+
+function renderAdminRentals() {
+  const container = document.getElementById('adminRentalList');
+  if (!container) return;
+  if (adminRentalsList.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีประวัติการเช่า</div>`;
+    return;
+  }
+
+  const searchQuery = document.getElementById('rentalSearchInput')?.value.trim().toLowerCase() || '';
+  const filteredRentals = searchQuery 
+    ? adminRentalsList.filter(r => 
+        (r.users?.username || '').toLowerCase().includes(searchQuery) ||
+        String(r.id).toLowerCase().includes(searchQuery) ||
+        (r.machine_name || '').toLowerCase().includes(searchQuery)
+      )
+    : adminRentalsList;
+
+  if (filteredRentals.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ไม่พบข้อมูลประวัติการเช่าที่ตรงตามต้องการ</div>`;
+    return;
+  }
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(filteredRentals.length / itemsPerPage);
+  if (adminRentalsPage > totalPages) adminRentalsPage = totalPages;
+  if (adminRentalsPage < 1) adminRentalsPage = 1;
+
+  const startIdx = (adminRentalsPage - 1) * itemsPerPage;
+  const paginatedItems = filteredRentals.slice(startIdx, startIdx + itemsPerPage);
+
+  container.innerHTML = `
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>ผู้เช่า</th>
+          <th>เครื่อง</th>
+          <th>ระยะเวลา</th>
+          <th>ราคา</th>
+          <th>เริ่มเช่า</th>
+          <th>สิ้นสุด</th>
+          <th>สถานะ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${paginatedItems.map(r => `
+          <tr>
+            <td class="font-mono text-xs text-gray-500">#${r.id}</td>
+            <td class="font-semibold text-pink-400">${r.users?.username || '-'}</td>
+            <td class="text-white whitespace-nowrap">${r.machine_name || '-'}</td>
+            <td>${
+              r.duration_hours % 720 === 0 ? (r.duration_hours / 720) + ' เดือน' :
+              r.duration_hours % 168 === 0 ? (r.duration_hours / 168) + ' สัปดาห์' :
+              r.duration_hours >= 24 ? Math.floor(r.duration_hours / 24) + ' วัน' :
+              r.duration_hours + ' ชม.'
+            }</td>
+            <td class="text-yellow-400 font-bold">฿${formatCurrency(r.total_price)}</td>
+            <td class="text-xs whitespace-nowrap">${formatDate(r.started_at)}</td>
+            <td class="text-xs whitespace-nowrap">${formatDate(r.ended_at)}</td>
+            <td>${statusBadge(r.status)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ${renderPaginationControls(adminRentalsPage, totalPages, 'changeAdminRentalsPage')}
+  `;
+}
+
+let adminTopupsList = [];
+let adminTopupsPage = 1;
 
 // --- Topup History (Admin) ---
 async function loadAdminTopups() {
   const container = document.getElementById('adminTopupList');
   try {
     const data = await apiFetch('/api/admin/topups');
-    if (!data.topups || data.topups.length === 0) {
-      container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีประวัติเติมเงิน</div>`;
-      return;
-    }
-
-    container.innerHTML = `
-      <table class="cyber-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>ผู้ใช้</th>
-            <th>จำนวนเงิน</th>
-            <th>Transaction Ref</th>
-            <th>สถานะ</th>
-            <th>หมายเหตุ</th>
-            <th>วันที่</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.topups.map(t => `
-            <tr>
-              <td class="font-mono text-xs text-gray-500">#${t.id}</td>
-              <td class="font-semibold text-pink-400">${t.users?.username || '-'}</td>
-              <td class="text-yellow-400 font-bold">฿${formatCurrency(t.amount)}</td>
-              <td class="text-xs font-mono text-gray-500">${t.transaction_ref || '-'}</td>
-              <td>${statusBadge(t.status)}</td>
-              <td class="text-xs text-gray-500 max-w-[200px] truncate">${t.note || '-'}</td>
-              <td class="text-xs whitespace-nowrap">${formatDate(t.created_at)}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    `;
+    adminTopupsList = data.topups || [];
+    adminTopupsPage = 1;
+    renderAdminTopups();
   } catch (err) {
     container.innerHTML = `<div class="text-center py-8 text-red-400">❌ โหลดข้อมูลไม่สำเร็จ</div>`;
   }
+}
+
+function changeAdminTopupsPage(page) {
+  adminTopupsPage = page;
+  renderAdminTopups();
+}
+
+function renderAdminTopups() {
+  const container = document.getElementById('adminTopupList');
+  if (!container) return;
+  if (adminTopupsList.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีประวัติเติมเงิน</div>`;
+    return;
+  }
+
+  const searchQuery = document.getElementById('topupSearchInput')?.value.trim().toLowerCase() || '';
+  const filteredTopups = searchQuery 
+    ? adminTopupsList.filter(t => 
+        (t.users?.username || '').toLowerCase().includes(searchQuery) ||
+        String(t.id).toLowerCase().includes(searchQuery) ||
+        (t.transaction_ref || '').toLowerCase().includes(searchQuery) ||
+        (t.note || '').toLowerCase().includes(searchQuery)
+      )
+    : adminTopupsList;
+
+  if (filteredTopups.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ไม่พบข้อมูลประวัติการเติมเงินที่ตรงตามต้องการ</div>`;
+    return;
+  }
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(filteredTopups.length / itemsPerPage);
+  if (adminTopupsPage > totalPages) adminTopupsPage = totalPages;
+  if (adminTopupsPage < 1) adminTopupsPage = 1;
+
+  const startIdx = (adminTopupsPage - 1) * itemsPerPage;
+  const paginatedItems = filteredTopups.slice(startIdx, startIdx + itemsPerPage);
+
+  container.innerHTML = `
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>ผู้ใช้</th>
+          <th>จำนวนเงิน</th>
+          <th>Transaction Ref</th>
+          <th>สถานะ</th>
+          <th>หมายเหตุ</th>
+          <th>วันที่</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${paginatedItems.map(t => `
+          <tr>
+            <td class="font-mono text-xs text-gray-500">#${t.id}</td>
+            <td class="font-semibold text-pink-400">${t.users?.username || '-'}</td>
+            <td class="text-yellow-400 font-bold">฿${formatCurrency(t.amount)}</td>
+            <td class="text-xs font-mono text-gray-500">${t.transaction_ref || '-'}</td>
+            <td>${statusBadge(t.status)}</td>
+            <td class="text-xs text-gray-500 max-w-[200px] truncate">${t.note || '-'}</td>
+            <td class="text-xs whitespace-nowrap">${formatDate(t.created_at)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ${renderPaginationControls(adminTopupsPage, totalPages, 'changeAdminTopupsPage')}
+  `;
 }
 
 // --- User Management (Admin) ---
@@ -447,99 +538,136 @@ function startAdminCountdown(userId, endTimeStr, isPowerOut) {
   adminCountdownIntervals[userId] = setInterval(update, 1000);
 }
 
+let adminUsersList = [];
+let adminUsersPage = 1;
+
 async function loadAdminUsers() {
   const container = document.getElementById('adminUserList');
   try {
     const data = await apiFetch('/api/admin/users');
-    if (!data.users || data.users.length === 0) {
-      container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีผู้ใช้ในระบบ</div>`;
-      return;
-    }
-
-    // Clear old countdowns
-    Object.values(adminCountdownIntervals).forEach(clearInterval);
-    adminCountdownIntervals = {};
-
-    container.innerHTML = `
-      <table class="cyber-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>ชื่อผู้ใช้</th>
-            <th>เครื่องที่เช่า</th>
-            <th>เวลาที่เหลือ</th>
-            <th>ยอดเงินคงเหลือ</th>
-            <th>บทบาท</th>
-            <th>วันที่สมัคร</th>
-            <th>จัดการ</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.users.map(u => `
-            <tr>
-              <td class="font-mono text-xs text-gray-500">${u.id}</td>
-              <td class="font-semibold text-white whitespace-nowrap">${u.username}</td>
-              <td>
-                ${u.active_machine 
-                  ? (u.active_machine.is_power_out
-                    ? `<span class="badge bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">🔌 ไฟดับ: ${u.active_machine.name}</span>`
-                    : `<span class="badge badge-in-use">${u.active_machine.name}</span>`
-                  )
-                  : `<span class="text-gray-500 text-sm">ว่าง</span>`
-                }
-              </td>
-              <td>
-                ${u.active_machine 
-                  ? `<span class="admin-countdown font-mono text-xs" id="admin-countdown-${u.id}" data-end="${u.active_machine.session_end_time}">--:--:--</span>`
-                  : `<span class="text-gray-500 text-sm">-</span>`
-                }
-              </td>
-              <td class="text-yellow-400 font-bold">฿${formatCurrency(u.credit)}</td>
-              <td>
-                <span class="px-2 py-0.5 text-xs rounded-full ${
-                  u.role === 'admin'
-                    ? 'bg-pink-500/20 text-pink-400 border border-pink-500/30'
-                    : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                }">
-                  ${u.role}
-                </span>
-              </td>
-              <td class="text-xs whitespace-nowrap">${formatDate(u.created_at)}</td>
-              <td class="whitespace-nowrap">
-                <div class="flex gap-2">
-                  <button onclick="openUserCreditModal('${u.id}', '${u.username}', ${u.credit})"
-                          class="px-2 py-1 text-xs bg-yellow-500/10 text-yellow-400 rounded border border-yellow-500/20 hover:bg-yellow-500/20 transition flex items-center gap-1 font-semibold">
-                    💰 จัดการเงิน
-                  </button>
-                  ${u.active_machine 
-                    ? `<button onclick="openUserTimeModal('${u.id}', '${u.username}', '${u.active_machine.name}', '${u.active_machine.session_end_time}', 'extend')"
-                               class="px-2 py-1 text-xs bg-green-500/10 text-green-400 rounded border border-green-500/20 hover:bg-green-500/20 transition flex items-center gap-1 font-semibold">
-                         ⏰ เพิ่มเวลา
-                       </button>
-                       <button onclick="openUserTimeModal('${u.id}', '${u.username}', '${u.active_machine.name}', '${u.active_machine.session_end_time}', 'reduce')"
-                               class="px-2 py-1 text-xs bg-red-500/10 text-red-400 rounded border border-red-500/20 hover:bg-red-500/20 transition flex items-center gap-1 font-semibold">
-                         ⏰ ลดเวลา
-                       </button>`
-                    : ''
-                  }
-                </div>
-              </td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    `;
-
-    // Start countdowns
-    data.users.forEach(u => {
-      if (u.active_machine && u.active_machine.session_end_time) {
-        startAdminCountdown(u.id, u.active_machine.session_end_time, u.active_machine.is_power_out);
-      }
-    });
-
+    adminUsersList = data.users || [];
+    adminUsersPage = 1;
+    renderAdminUsers();
   } catch (err) {
     container.innerHTML = `<div class="text-center py-8 text-red-400">❌ โหลดข้อมูลผู้ใช้ไม่สำเร็จ</div>`;
   }
+}
+
+function changeAdminUsersPage(page) {
+  adminUsersPage = page;
+  renderAdminUsers();
+}
+
+function renderAdminUsers() {
+  const container = document.getElementById('adminUserList');
+  if (!container) return;
+  if (adminUsersList.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีผู้ใช้ในระบบ</div>`;
+    return;
+  }
+
+  // Clear old countdowns
+  Object.values(adminCountdownIntervals).forEach(clearInterval);
+  adminCountdownIntervals = {};
+
+  const searchQuery = document.getElementById('userSearchInput')?.value.trim().toLowerCase() || '';
+  const filteredUsers = searchQuery 
+    ? adminUsersList.filter(u => 
+        u.username.toLowerCase().includes(searchQuery) || 
+        String(u.id).toLowerCase().includes(searchQuery)
+      )
+    : adminUsersList;
+
+  if (filteredUsers.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ไม่พบข้อมูลผู้ใช้ที่ตรงตามต้องการ</div>`;
+    return;
+  }
+
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+  if (adminUsersPage > totalPages) adminUsersPage = totalPages;
+  if (adminUsersPage < 1) adminUsersPage = 1;
+
+  const startIdx = (adminUsersPage - 1) * itemsPerPage;
+  const paginatedItems = filteredUsers.slice(startIdx, startIdx + itemsPerPage);
+
+  container.innerHTML = `
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>ชื่อผู้ใช้</th>
+          <th>เครื่องที่เช่า</th>
+          <th>เวลาที่เหลือ</th>
+          <th>ยอดเงินคงเหลือ</th>
+          <th>บทบาท</th>
+          <th>วันที่สมัคร</th>
+          <th>จัดการ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${paginatedItems.map(u => `
+          <tr>
+            <td class="font-mono text-xs text-gray-500">${u.id}</td>
+            <td class="font-semibold text-white whitespace-nowrap">${u.username}</td>
+            <td>
+              ${u.active_machine 
+                ? (u.active_machine.is_power_out
+                  ? `<span class="badge bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse">🔌 ไฟดับ: ${u.active_machine.name}</span>`
+                  : `<span class="badge badge-in-use">${u.active_machine.name}</span>`
+                )
+                : `<span class="text-gray-500 text-sm">ว่าง</span>`
+              }
+            </td>
+            <td>
+              ${u.active_machine 
+                ? `<span class="admin-countdown font-mono text-xs" id="admin-countdown-${u.id}" data-end="${u.active_machine.session_end_time}">--:--:--</span>`
+                : `<span class="text-gray-500 text-sm">-</span>`
+              }
+            </td>
+            <td class="text-yellow-400 font-bold">฿${formatCurrency(u.credit)}</td>
+            <td>
+              <span class="px-2 py-0.5 text-xs rounded-full ${
+                u.role === 'admin'
+                  ? 'bg-pink-500/20 text-pink-400 border border-pink-500/30'
+                  : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+              }">
+                ${u.role}
+              </span>
+            </td>
+            <td class="text-xs whitespace-nowrap">${formatDate(u.created_at)}</td>
+            <td class="whitespace-nowrap">
+              <div class="flex gap-2">
+                <button onclick="openUserCreditModal('${u.id}', '${u.username}', ${u.credit})"
+                        class="px-2 py-1 text-xs bg-yellow-500/10 text-yellow-400 rounded border border-yellow-500/20 hover:bg-yellow-500/20 transition flex items-center gap-1 font-semibold">
+                  💰 จัดการเงิน
+                </button>
+                ${u.active_machine 
+                  ? `<button onclick="openUserTimeModal('${u.id}', '${u.username}', '${u.active_machine.name}', '${u.active_machine.session_end_time}', 'extend')"
+                             class="px-2 py-1 text-xs bg-green-500/10 text-green-400 rounded border border-green-500/20 hover:bg-green-500/20 transition flex items-center gap-1 font-semibold">
+                       ⏰ เพิ่มเวลา
+                     </button>
+                     <button onclick="openUserTimeModal('${u.id}', '${u.username}', '${u.active_machine.name}', '${u.active_machine.session_end_time}', 'reduce')"
+                             class="px-2 py-1 text-xs bg-red-500/10 text-red-400 rounded border border-red-500/20 hover:bg-red-500/20 transition flex items-center gap-1 font-semibold">
+                       ⏰ ลดเวลา
+                     </button>`
+                  : ''
+                }
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ${renderPaginationControls(adminUsersPage, totalPages, 'changeAdminUsersPage')}
+  `;
+
+  // Start countdowns only for visible items
+  paginatedItems.forEach(u => {
+    if (u.active_machine && u.active_machine.session_end_time) {
+      startAdminCountdown(u.id, u.active_machine.session_end_time, u.active_machine.is_power_out);
+    }
+  });
 }
 
 function openUserCreditModal(userId, username, currentCredit) {

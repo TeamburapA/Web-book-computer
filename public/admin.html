@@ -93,7 +93,17 @@
 
       <!-- RENTALS TAB -->
       <div id="panel-rentals" class="hidden">
-        <h2 class="text-lg font-bold text-white mb-4">ประวัติการเช่าทั้งระบบ</h2>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <h2 class="text-lg font-bold text-white">ประวัติการเช่าทั้งระบบ</h2>
+          <div class="relative w-full sm:w-72">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              </svg>
+            </span>
+            <input type="text" id="rentalSearchInput" class="cyber-input text-sm pl-9 pr-4 py-2 w-full" placeholder="ค้นหาชื่อผู้ใช้...">
+          </div>
+        </div>
         <div class="overflow-x-auto" id="adminRentalList">
           <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
         </div>
@@ -101,7 +111,17 @@
 
       <!-- TOPUPS TAB -->
       <div id="panel-topups" class="hidden">
-        <h2 class="text-lg font-bold text-white mb-4">ประวัติเติมเงินอัตโนมัติ</h2>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <h2 class="text-lg font-bold text-white">ประวัติเติมเงินอัตโนมัติ</h2>
+          <div class="relative w-full sm:w-72">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              </svg>
+            </span>
+            <input type="text" id="topupSearchInput" class="cyber-input text-sm pl-9 pr-4 py-2 w-full" placeholder="ค้นหาชื่อผู้ใช้...">
+          </div>
+        </div>
         <div class="overflow-x-auto" id="adminTopupList">
           <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
         </div>

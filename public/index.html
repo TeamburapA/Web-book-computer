@@ -21,6 +21,8 @@
     }
   </script>
   <link rel="stylesheet" href="/css/style.css">
+  <!-- Cloudflare Turnstile -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 <body class="font-prompt text-gray-300 grid-pattern">
 
@@ -157,6 +159,8 @@
             <label class="block text-sm text-gray-400 mb-1">ยืนยัน Password</label>
             <input id="regConfirmPassword" type="password" class="cyber-input" placeholder="กรอกรหัสผ่านอีกครั้ง" minlength="6" required>
           </div>
+          <!-- Turnstile Widget (Default: always-pass test key, change to real sitekey in production) -->
+          <div class="cf-turnstile flex justify-center my-3" data-sitekey="0x4AAAAAAD2jY3rJZxJlhvRk" data-theme="dark"></div>
           <button type="submit" class="btn-neon w-full !py-3">สมัครสมาชิก</button>
         </form>
         <p class="text-center text-gray-500 text-xs mt-4">มีบัญชีอยู่แล้ว? <button onclick="switchAuthTab('login')" class="text-yellow-400 hover:underline">เข้าสู่ระบบ</button></p>

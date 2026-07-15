@@ -13,6 +13,8 @@
     }
   </script>
   <link rel="stylesheet" href="/css/style.css">
+  <!-- Cloudflare Turnstile -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 
 <body class="font-prompt text-gray-300 grid-pattern min-h-screen flex flex-col">
@@ -320,6 +322,8 @@
               class="cyber-input" minlength="6" required></div>
           <div><label class="block text-sm text-gray-400 mb-1">ยืนยัน Password</label><input id="regConfirmPassword"
               type="password" class="cyber-input" minlength="6" required></div>
+          <!-- Turnstile Widget (Default: always-pass test key, change to real sitekey in production) -->
+          <div class="cf-turnstile flex justify-center my-3" data-sitekey="0x4AAAAAAD2jY3rJZxJlhvRk" data-theme="dark"></div>
           <button type="submit" class="btn-neon w-full !py-3">สมัครสมาชิก</button>
         </form>
       </div>

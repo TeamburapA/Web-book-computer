@@ -138,13 +138,17 @@ function setupAuthForms() {
         return;
       }
 
+      // Retrieve Cloudflare Turnstile token if present
+      const turnstileTokenEl = registerForm.querySelector('[name="cf-turnstile-response"]');
+      const turnstileToken = turnstileTokenEl ? turnstileTokenEl.value : '';
+
       btn.disabled = true;
       btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px"></div>';
 
       try {
         const data = await apiFetch('/api/register', {
           method: 'POST',
-          body: { username, password }
+          body: { username, password, turnstileToken }
         });
         setToken(data.token);
         setCachedUser(data.user);
@@ -153,8 +157,14 @@ function setupAuthForms() {
         hideModal('authModal');
         showToast(`สมัครสมาชิกสำเร็จ! ยินดีต้อนรับ ${data.user.username} 🎉`, 'success');
         registerForm.reset();
+        if (typeof turnstile !== 'undefined') {
+          turnstile.reset(registerForm.querySelector('.cf-turnstile'));
+        }
       } catch (err) {
         showToast(err.error || 'สมัครสมาชิกล้มเหลว', 'error');
+        if (typeof turnstile !== 'undefined') {
+          turnstile.reset(registerForm.querySelector('.cf-turnstile'));
+        }
       } finally {
         btn.disabled = false;
         btn.textContent = 'สมัครสมาชิก';

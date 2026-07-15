@@ -222,10 +222,35 @@ function generateToken(user) {
 // POST /api/register — สมัครสมาชิก
 app.post('/api/register', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, turnstileToken } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: 'กรุณากรอก Username และ Password' });
     }
+
+    // --- Cloudflare Turnstile Verification ---
+    const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+    if (turnstileSecret) {
+      if (!turnstileToken) {
+        return res.status(400).json({ error: 'กรุณายืนยันการตรวจสอบสิทธิ์ (Turnstile Token Missing)' });
+      }
+      try {
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `secret=${encodeURIComponent(turnstileSecret)}&response=${encodeURIComponent(turnstileToken)}&remoteip=${encodeURIComponent(ip)}`
+        });
+        const turnstileResult = await response.json();
+        if (!turnstileResult.success) {
+          console.error('Turnstile verification failed:', turnstileResult);
+          return res.status(400).json({ error: 'การตรวจสอบความปลอดภัยล้มเหลว กรุณาลองใหม่อีกครั้ง' });
+        }
+      } catch (verifyErr) {
+        console.error('Turnstile connection error:', verifyErr);
+        return res.status(500).json({ error: 'ไม่สามารถติดต่อระบบความปลอดภัยของ Cloudflare ได้' });
+      }
+    }
+
     if (username.length < 3) {
       return res.status(400).json({ error: 'Username ต้องมีอย่างน้อย 3 ตัวอักษร' });
     }

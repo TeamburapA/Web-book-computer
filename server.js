@@ -289,12 +289,45 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
+// GET /api/config — ดึงค่า config สาธารณะ
+app.get('/api/config', (req, res) => {
+  res.json({
+    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || ''
+  });
+});
+
 // POST /api/login — เข้าสู่ระบบ
 app.post('/api/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, turnstileToken } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: 'กรุณากรอก Username และ Password' });
+    }
+
+    // ตรวจสอบ Cloudflare Turnstile
+    const turnstileSecret = process.env.TURNSTILE_SECRET_KEY;
+    if (turnstileSecret) {
+      if (!turnstileToken) {
+        return res.status(400).json({ error: 'กรุณายืนยันว่าคุณไม่ใช่บอท' });
+      }
+
+      try {
+        const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: `secret=${encodeURIComponent(turnstileSecret)}&response=${encodeURIComponent(turnstileToken)}`
+        });
+
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) {
+          return res.status(400).json({ error: 'การตรวจสอบบอทล้มเหลว (Turnstile Invalid)' });
+        }
+      } catch (verifyErr) {
+        console.error('Turnstile verification error:', verifyErr);
+        return res.status(500).json({ error: 'เกิดข้อผิดพลาดในการตรวจสอบบอท' });
+      }
     }
 
     // ค้นหา user

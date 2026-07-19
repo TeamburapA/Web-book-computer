@@ -139,6 +139,8 @@
             <label class="block text-sm text-gray-400 mb-1">Password</label>
             <input id="loginPassword" type="password" class="cyber-input" placeholder="กรอกรหัสผ่าน" autocomplete="current-password" required>
           </div>
+          <!-- Cloudflare Turnstile -->
+          <div id="cf-turnstile-login" class="flex justify-center my-3"></div>
           <button type="submit" class="btn-neon w-full !py-3">เข้าสู่ระบบ</button>
         </form>
         <p class="text-center text-gray-500 text-xs mt-4">ยังไม่มีบัญชี? <button onclick="switchAuthTab('register')" class="text-yellow-400 hover:underline">สมัครเลย</button></p>
@@ -409,6 +411,8 @@
   <script src="/js/config.js"></script>
   <script src="/js/utils.js"></script>
   <script src="/js/auth.js"></script>
+  <!-- Cloudflare Turnstile -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onloadTurnstileCallback&render=explicit" async defer></script>
   <script src="/js/machines.js"></script>
 
   <script>

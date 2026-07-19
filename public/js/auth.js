@@ -77,6 +77,29 @@ function updateNavbar(user) {
   }
 }
 
+let turnstileWidgetId = null;
+
+// Callback สำหรับโหลด Cloudflare Turnstile
+window.onloadTurnstileCallback = async function () {
+  try {
+    const res = await fetch('/api/config');
+    const config = await res.json();
+    const siteKey = config.turnstileSiteKey;
+
+    if (siteKey && window.turnstile) {
+      const container = document.getElementById('cf-turnstile-login');
+      if (container) {
+        turnstileWidgetId = window.turnstile.render('#cf-turnstile-login', {
+          sitekey: siteKey,
+          theme: 'dark'
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Error initializing Turnstile:', err);
+  }
+};
+
 function setupAuthForms() {
   // Login form
   const loginForm = document.getElementById('loginForm');
@@ -92,13 +115,24 @@ function setupAuthForms() {
         return;
       }
 
+      // ดึง Turnstile Token
+      const turnstileInput = loginForm.querySelector('[name="cf-turnstile-response"]');
+      const turnstileToken = turnstileInput ? turnstileInput.value : '';
+
+      // ตรวจสอบเบื้องต้น
+      const container = document.getElementById('cf-turnstile-login');
+      if (container && !turnstileToken) {
+        showToast('กรุณายืนยันว่าคุณไม่ใช่บอท (Turnstile)', 'error');
+        return;
+      }
+
       btn.disabled = true;
       btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px"></div>';
 
       try {
         const data = await apiFetch('/api/login', {
           method: 'POST',
-          body: { username, password }
+          body: { username, password, turnstileToken }
         });
         setToken(data.token);
         setCachedUser(data.user);
@@ -112,6 +146,10 @@ function setupAuthForms() {
         if (typeof loadMachines === 'function') loadMachines();
       } catch (err) {
         showToast(err.error || 'เข้าสู่ระบบล้มเหลว', 'error');
+        // รีเซ็ต Turnstile ให้กดใหม่เมื่อล็อกอินล้มเหลว
+        if (window.turnstile && turnstileWidgetId !== null) {
+          window.turnstile.reset(turnstileWidgetId);
+        }
       } finally {
         btn.disabled = false;
         btn.textContent = 'เข้าสู่ระบบ';

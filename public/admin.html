@@ -72,6 +72,7 @@
       <button class="tab-btn" onclick="switchAdminTab('rentals')" id="tab-rentals">📜 ประวัติเช่า</button>
       <button class="tab-btn" onclick="switchAdminTab('topups')" id="tab-topups">💰 ประวัติเติมเงิน</button>
       <button class="tab-btn" onclick="switchAdminTab('users')" id="tab-users">👤 จัดการผู้ใช้</button>
+      <button class="tab-btn" onclick="switchAdminTab('partners')" id="tab-partners">🤝 ระบบพาร์ทเนอร์</button>
       <button class="tab-btn" onclick="switchAdminTab('settings')" id="tab-settings">⚙️ ตั้งค่าระบบ</button>
       <button class="tab-btn" onclick="switchAdminTab('finance')" id="tab-finance">📊 สรุปผลการเงิน</button>
       <button class="tab-btn" onclick="switchAdminTab('chat')" id="tab-chat">💬 แชทสด</button>
@@ -131,17 +132,59 @@
       <div id="panel-users" class="hidden">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
           <h2 class="text-lg font-bold text-white">จัดการผู้ใช้งานและยอดเงิน</h2>
-          <div class="relative w-full sm:w-72">
-            <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-              </svg>
-            </span>
-            <input type="text" id="userSearchInput" class="cyber-input text-sm pl-9 pr-4 py-2 w-full" placeholder="ค้นหาชื่อผู้ใช้ หรือ ID...">
+          <div class="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+            <button id="cleanBotsBtn" onclick="cleanBotAccounts()" type="button" class="btn-pink text-xs !py-2 !px-3.5 whitespace-nowrap flex items-center gap-1.5" title="ค้นหาและลบบัญชีบอทที่ไม่มีประวัติใช้งาน">
+              <span>🧹</span> ล้างไอดีบอท
+            </button>
+            <div class="relative w-full sm:w-72">
+              <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-500">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+              </span>
+              <input type="text" id="userSearchInput" class="cyber-input text-sm pl-9 pr-4 py-2 w-full" placeholder="ค้นหาชื่อผู้ใช้ หรือ ID...">
+            </div>
           </div>
         </div>
         <div class="overflow-x-auto" id="adminUserList">
           <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
+        </div>
+      </div>
+
+      <!-- PARTNERS TAB -->
+      <div id="panel-partners" class="hidden">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">🤝 ระบบพาร์ทเนอร์ & รายการถอนเงิน</h2>
+            <p class="text-xs text-gray-400 mt-1">จัดการอนุมัติการโอนเงินถอน และตรวจเช็ครายได้ของพาร์ทเนอร์แต่ละคน</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="relative flex-1 sm:w-64">
+              <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-gray-400">🔍</span>
+              <input type="text" id="partnerSearchInput" class="cyber-input text-sm pl-9 pr-4 py-2 w-full" placeholder="ค้นหาชื่อพาร์ทเนอร์...">
+            </div>
+            <button onclick="openPartnerCreditAdjustModal()" class="btn-neon text-xs !py-2 !px-4 whitespace-nowrap">+ ปรับเครดิตพาร์ทเนอร์</button>
+          </div>
+        </div>
+
+        <!-- Section 1: Partner Withdrawal Requests -->
+        <div class="mb-8">
+          <h3 class="text-md font-bold text-yellow-400 mb-3 flex items-center gap-2">
+            <span>💸 คำขอถอนเงินพาร์ทเนอร์ (รออนุมัติโอนเงิน)</span>
+          </h3>
+          <div class="overflow-x-auto border border-white/5 rounded-lg bg-cyber-dark/40" id="adminWithdrawalList">
+            <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
+          </div>
+        </div>
+
+        <!-- Section 2: Partner Accounts & Machines -->
+        <div>
+          <h3 class="text-md font-bold text-white mb-3 flex items-center gap-2">
+            <span>👥 รายชื่อผู้ใช้ยศพาร์ทเนอร์ทั้งหมด</span>
+          </h3>
+          <div class="overflow-x-auto border border-white/5 rounded-lg bg-cyber-dark/40" id="adminPartnerUserList">
+            <div class="text-center py-8 text-gray-500">กำลังโหลด...</div>
+          </div>
         </div>
       </div>
 
@@ -538,6 +581,25 @@
           </div>
         </div>
 
+        <div class="border-t border-white/5 pt-4 mt-4">
+          <p class="text-sm text-gray-400 mb-3">🤝 ประเภทเจ้าของเครื่อง (Ownership)</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">ประเภทเจ้าของ *</label>
+              <select id="mf_owner_type" onchange="togglePartnerOwnerSelect()" class="cyber-input">
+                <option value="admin" selected>แอดมิน (Admin Machine)</option>
+                <option value="partner">พาร์ทเนอร์ (Partner Machine)</option>
+              </select>
+            </div>
+            <div id="mf_partner_select_wrapper" class="hidden">
+              <label class="block text-sm text-gray-400 mb-1">เลือกพาร์ทเนอร์เจ้าของเครื่อง *</label>
+              <select id="mf_owner_id" class="cyber-input">
+                <option value="">-- เลือกระบุพาร์ทเนอร์ --</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
 
         <div>
           <label class="block text-sm text-gray-400 mb-1">ผลtest (รายละเอียดเครื่อง)</label>
@@ -552,6 +614,41 @@
         <div class="flex gap-3 pt-2">
           <button type="button" onclick="hideModal('machineFormModal')" class="btn-outline flex-1">ยกเลิก</button>
           <button type="submit" class="btn-neon flex-1" id="machineFormSubmitBtn">💾 บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ADJUST PARTNER CREDIT MODAL -->
+  <div id="partnerCreditModal" class="modal-overlay">
+    <div class="modal-content !max-w-md">
+      <h3 class="text-xl font-bold text-white mb-4">🤝 ปรับปรุงเครดิตพาร์ทเนอร์</h3>
+      <form id="partnerCreditForm" class="space-y-4">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">เลือกพาร์ทเนอร์ *</label>
+          <select id="pc_user_id" class="cyber-input" required>
+            <option value="">-- เลือกพาร์ทเนอร์ --</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">รูปแบบการปรับปรุง *</label>
+          <select id="pc_action" class="cyber-input" required>
+            <option value="add">➕ เพิ่มเครดิต (Add)</option>
+            <option value="deduct">➖ ลดเครดิต (Deduct)</option>
+            <option value="set">⚙️ กำหนดเครดิตใหม่ (Set)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">จำนวนเครดิต (บาท) *</label>
+          <input id="pc_amount" type="number" step="0.01" min="0" class="cyber-input" placeholder="0.00" required>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">หมายเหตุ *</label>
+          <input id="pc_note" class="cyber-input" placeholder="เช่น ส่วนต่างย้ายโอน, ชดเชยรายได้" required>
+        </div>
+        <div class="flex gap-3 pt-2">
+          <button type="button" onclick="hideModal('partnerCreditModal')" class="btn-outline flex-1">ยกเลิก</button>
+          <button type="submit" class="btn-neon flex-1" id="partnerCreditSubmitBtn">💾 ยืนยัน</button>
         </div>
       </form>
     </div>
@@ -626,9 +723,9 @@
  — Admin Panel</div>
   </footer>
 
-  <script src="/js/config.js"></script>
-  <script src="/js/utils.js"></script>
-  <script src="/js/auth.js"></script>
-  <script src="/js/admin.js"></script>
+  <script src="/js/config.js?v=3"></script>
+  <script src="/js/utils.js?v=3"></script>
+  <script src="/js/auth.js?v=3"></script>
+  <script src="/js/admin.js?v=3"></script>
 </body>
 </html>

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Partner Dashboard — ChickDDC</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { fontFamily: { prompt: ['Prompt', 'sans-serif'] }, colors: { neon: { yellow: '#facc15', pink: '#ec4899' }, cyber: { dark: '#07070a', card: '#0e0e13', surface: '#121218', border: '#1f1f27' } } } }
+    }
+  </script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="font-prompt text-gray-300 grid-pattern min-h-screen flex flex-col">
+
+  <!-- NAVBAR -->
+  <nav class="nav-glass sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="flex items-center justify-between h-16">
+        <a href="/" class="flex items-center gap-2">
+          <img src="favicon.png" alt="ChickDDC Logo" class="h-8 w-auto object-contain">
+          <span class="text-xl font-bold gradient-text">ChickDDC</span>
+          <span class="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30 ml-2 font-bold">PARTNER</span>
+        </a>
+        <div class="hidden md:flex items-center gap-6">
+          <a href="/" class="text-gray-400 text-sm hover:text-yellow-400 transition">หน้าหลัก</a>
+          <a href="/dashboard.html" class="text-gray-400 text-sm hover:text-yellow-400 transition">แดชบอร์ด</a>
+          <a href="/partner.html" class="text-purple-400 font-medium text-sm">🤝 พาร์ทเนอร์</a>
+        </div>
+        <div class="hidden md:flex items-center gap-3">
+          <div id="authButtons" class="hidden"></div>
+          <div id="userInfo" class="hidden"></div>
+        </div>
+        <button onclick="document.getElementById('mobileMenu').classList.toggle('hidden')" class="md:hidden text-gray-400">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="mobileMenu" class="md:hidden hidden border-t border-white/5 bg-cyber-dark/95 backdrop-blur px-4 py-4 space-y-2">
+      <a href="/" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">🏠 หน้าหลัก</a>
+      <a href="/dashboard.html" class="block px-3 py-2 rounded-lg text-gray-400 text-sm">📊 แดชบอร์ด</a>
+      <a href="/partner.html" class="block px-3 py-2 rounded-lg text-purple-400 bg-purple-500/10 text-sm font-semibold">🤝 พาร์ทเนอร์</a>
+      <div class="border-t border-white/5 pt-3"><div id="mobileAuthButtons" class="hidden"></div><div id="mobileUserInfo" class="hidden"></div></div>
+    </div>
+  </nav>
+
+  <!-- ACCESS DENIED -->
+  <div id="partnerAccessDenied" class="hidden flex-1 flex items-center justify-center py-20">
+    <div class="text-center max-w-md px-4">
+      <div class="text-6xl mb-4">🔒</div>
+      <h2 class="text-2xl font-bold text-white mb-2">เฉพาะบัญชียศพาร์ทเนอร์เท่านั้น</h2>
+      <p class="text-gray-400 mb-6 text-sm">คุณต้องเข้าสู่ระบบด้วยบัญชีที่ได้รับสิทธิ์พาร์ทเนอร์จึงจะสามารถเข้าหน้านี้ได้</p>
+      <div class="flex gap-3 justify-center">
+        <a href="/" class="btn-outline text-sm">กลับหน้าหลัก</a>
+        <button onclick="showPartnerModal()" class="btn-neon text-sm">🤝 สมัครยศพาร์ทเนอร์</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PARTNER CONTENT -->
+  <main id="partnerContent" class="hidden flex-1 max-w-7xl mx-auto px-4 sm:px-6 py-10 w-full">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-white flex items-center gap-2">
+          <span>🤝 แดชบอร์ดพาร์ทเนอร์</span>
+        </h1>
+        <p class="text-gray-500 text-sm mt-1">สรุปรายได้ การเงิน และเครื่องคอมพิวเตอร์ของคุณในระบบ</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="loadPartnerDashboardData()" class="btn-outline text-xs !py-2 !px-4 flex items-center gap-1.5">
+          <span>🔄</span> รีเฟรชข้อมูล
+        </button>
+      </div>
+    </div>
+
+    <!-- Financial Stats Overview (4 Cards) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <!-- Card 1: All time Revenue -->
+      <div class="cyber-card p-5 relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <div>
+            <p class="text-xs text-gray-400 font-medium">รายได้รวมทั้งหมด</p>
+            <h3 class="text-2xl font-black text-purple-400 mt-1 font-mono" id="stat_total_revenue">฿ 0.00</h3>
+          </div>
+          <div class="p-3 bg-purple-500/10 rounded-xl border border-purple-500/20 text-purple-400 text-xl">
+            📈
+          </div>
+        </div>
+        <p class="text-[11px] text-gray-500 mt-3">ยอดเงินค่าเช่าเครื่องทั้งหมดสะสม</p>
+      </div>
+
+      <!-- Card 2: Today / Month Revenue -->
+      <div class="cyber-card p-5 relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <div>
+            <p class="text-xs text-gray-400 font-medium">รายได้วันนี้ / เดือนนี้</p>
+            <h3 class="text-2xl font-black text-green-400 mt-1 font-mono" id="stat_today_revenue">฿ 0.00</h3>
+          </div>
+          <div class="p-3 bg-green-500/10 rounded-xl border border-green-500/20 text-green-400 text-xl">
+            📅
+          </div>
+        </div>
+        <p class="text-[11px] text-gray-400 mt-3" id="stat_month_revenue">เดือนนี้: ฿ 0.00</p>
+      </div>
+
+      <!-- Card 3: Withdrawable Partner Credit -->
+      <div class="cyber-card p-5 relative overflow-hidden border-yellow-500/30">
+        <div class="flex justify-between items-start">
+          <div>
+            <p class="text-xs text-yellow-400 font-medium">เครดิตถอนได้คงเหลือ</p>
+            <h3 class="text-2xl font-black text-yellow-400 mt-1 font-mono" id="stat_partner_credit">฿ 0.00</h3>
+          </div>
+          <div class="p-3 bg-yellow-500/10 rounded-xl border border-yellow-500/20 text-yellow-400 text-xl">
+            💰
+          </div>
+        </div>
+        <p class="text-[11px] text-gray-400 mt-3">พร้อมแจ้งถอนเข้าธนาคารได้ทันที</p>
+      </div>
+
+      <!-- Card 4: Total Withdrawn -->
+      <div class="cyber-card p-5 relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <div>
+            <p class="text-xs text-gray-400 font-medium">ถอนเงินสำเร็จแล้ว</p>
+            <h3 class="text-2xl font-black text-blue-400 mt-1 font-mono" id="stat_total_withdrawn">฿ 0.00</h3>
+          </div>
+          <div class="p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 text-blue-400 text-xl">
+            🏦
+          </div>
+        </div>
+        <p class="text-[11px] text-gray-500 mt-3">ยอดโอนเงินเข้าบัญชีจริงสะสม</p>
+      </div>
+    </div>
+
+    <!-- Main Grid: Withdrawal Form & History -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
+      <!-- Withdrawal Request Form -->
+      <div class="lg:col-span-1 cyber-card p-6 border-purple-500/20">
+        <h2 class="text-lg font-bold text-white mb-1 flex items-center gap-2">
+          <span>💸 แจ้งถอนเงินเครดิต</span>
+        </h2>
+        <p class="text-xs text-gray-400 mb-5">ถอนเงินรายได้เข้าบัญชีธนาคาร (หักค่าธรรมเนียม 10%)</p>
+
+        <form id="partnerWithdrawForm" class="space-y-4">
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">จำนวนเครดิตที่ต้องการถอน (บาท) *</label>
+            <input id="pw_amount" type="number" step="1" min="100" class="cyber-input text-sm font-mono text-yellow-400 font-bold" placeholder="ขั้นต่ำ 100" required oninput="calculateWithdrawNet()">
+          </div>
+
+          <!-- Real-time Net Calculation -->
+          <div class="bg-white/5 p-3 rounded-lg border border-white/5 text-xs space-y-1.5">
+            <div class="flex justify-between text-gray-400">
+              <span>ยอดถอนที่ระบุ:</span>
+              <span id="calc_amount" class="font-mono">฿ 0.00</span>
+            </div>
+            <div class="flex justify-between text-gray-400">
+              <span>ค่าธรรมเนียม (10%):</span>
+              <span id="calc_fee" class="font-mono text-pink-400">- ฿ 0.00</span>
+            </div>
+            <div class="flex justify-between font-bold text-green-400 border-t border-white/10 pt-1.5 text-sm">
+              <span>ยอดเงินที่ได้รับจริง:</span>
+              <span id="calc_net" class="font-mono">฿ 0.00</span>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">ธนาคารปลายทาง *</label>
+            <select id="pw_bank_name" class="cyber-input text-sm" required>
+              <option value="">-- เลือกธนาคาร --</option>
+              <option value="กสิกรไทย (KBANK)">กสิกรไทย (KBANK)</option>
+              <option value="ไทยพาณิชย์ (SCB)">ไทยพาณิชย์ (SCB)</option>
+              <option value="กรุงเทพ (BBL)">กรุงเทพ (BBL)</option>
+              <option value="กรุงไทย (KTB)">กรุงไทย (KTB)</option>
+              <option value="กรุงศรีอยุธยา (BAY)">กรุงศรีอยุธยา (BAY)</option>
+              <option value="ทหารไทยธนชาต (ttb)">ทหารไทยธนชาต (ttb)</option>
+              <option value="ออมสิน (GSB)">ออมสิน (GSB)</option>
+              <option value="TrueMoney Wallet">TrueMoney Wallet</option>
+              <option value="พร้อมเพย์ (PromptPay)">พร้อมเพย์ (PromptPay)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">เลขที่บัญชี / เบอร์โทร *</label>
+            <input id="pw_bank_account" type="text" class="cyber-input text-sm font-mono" placeholder="เช่น 123-4-56789-0" required>
+          </div>
+
+          <div>
+            <label class="block text-xs text-gray-400 mb-1">ชื่อบัญชีผู้รับเงิน *</label>
+            <input id="pw_account_name" type="text" class="cyber-input text-sm" placeholder="เช่น นายสมชาย ใจดี" required>
+          </div>
+
+          <button type="submit" id="partnerWithdrawBtn" class="btn-neon w-full !py-3 font-bold text-sm">
+            📤 ยืนยันแจ้งถอนเงิน
+          </button>
+        </form>
+      </div>
+
+      <!-- Partner Machines & Withdrawal History -->
+      <div class="lg:col-span-2 space-y-8">
+        <!-- My Machines List -->
+        <div class="cyber-card p-6">
+          <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>🖥️ เครื่องคอมพิวเตอร์ของคุณในระบบ</span>
+          </h2>
+          <div class="overflow-x-auto border border-white/5 rounded-lg bg-cyber-dark/40" id="partnerMachinesTable">
+            <div class="text-center py-8 text-gray-500 text-sm">กำลังโหลด...</div>
+          </div>
+        </div>
+
+        <!-- Withdrawal History Table -->
+        <div class="cyber-card p-6">
+          <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <span>📜 ประวัติการแจ้งถอนเงิน</span>
+          </h2>
+          <div class="overflow-x-auto border border-white/5 rounded-lg bg-cyber-dark/40" id="partnerWithdrawalsTable">
+            <div class="text-center py-8 text-gray-500 text-sm">กำลังโหลด...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="border-t border-white/5 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 text-center text-xs text-gray-500">
+      &copy; 2026 ChickDDC — Partner System. All rights reserved.
+    </div>
+  </footer>
+
+  <script src="/js/config.js?v=3"></script>
+  <script src="/js/utils.js?v=3"></script>
+  <script src="/js/auth.js?v=3"></script>
+  <script src="/js/partner.js?v=3"></script>
+</body>
+</html>

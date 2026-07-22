@@ -108,12 +108,28 @@ function renderMachines(machines) {
       <div class="cyber-card animate-slide-up group" style="animation-delay: ${idx * 0.05}s" id="machine-card-${m.id}">
         <!-- Header flat image area -->
         <div class="h-32 bg-[#09090d] border-b border-[#1f1f27] relative flex items-center justify-center overflow-hidden">
+          <!-- Owner Badge on Top Left -->
+          <div class="absolute top-3 left-3 z-10">
+            ${m.owner_type === 'partner' ? `
+              <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-500/25 text-purple-300 border border-purple-500/40 backdrop-blur-md flex items-center gap-1 shadow-sm font-mono">
+                พาร์ทเนอร์
+              </span>
+            ` : `
+              <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-yellow-500/25 text-yellow-300 border border-yellow-500/40 backdrop-blur-md flex items-center gap-1 shadow-sm font-mono">
+                เครื่องร้านหลัก 
+              </span>
+            `}
+          </div>
+
           ${m.image_url ? `
             <img src="${m.image_url}" alt="${m.name}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
           ` : `
             <span class="text-5xl opacity-40 transition-transform duration-500 group-hover:scale-110">🖥️</span>
           `}
-          <div class="absolute top-3 right-3">${m.is_power_out ? '<span class="badge bg-red-500/20 text-red-400 border border-red-500/30">🔌 ไฟดับ</span>' : statusBadge(m.status)}</div>
+          <div class="absolute top-3 right-3 z-10 flex flex-col items-end gap-1">
+            ${m.is_power_out ? '<span class="badge bg-red-500/20 text-red-400 border border-red-500/30">🔌 ไฟดับ</span>' : statusBadge(m.status)}
+            ${tuyaPowerBadge(m.tuya_power)}
+          </div>
         </div>
 
         <!-- Content -->
@@ -340,9 +356,22 @@ function openRentalModal(machineId) {
   // Reset rules checkbox
   document.getElementById('acceptRules').checked = false;
 
-  // User credit
+  // User credit & partner choice
   const user = getCachedUser();
   document.getElementById('rentalUserCredit').textContent = user ? `฿ ${formatCurrency(user.credit)}` : '฿ 0.00';
+
+  const partnerChoiceEl = document.getElementById('partnerPaymentChoice');
+  if (partnerChoiceEl) {
+    if (user && user.role === 'partner') {
+      partnerChoiceEl.classList.remove('hidden');
+      const payCreditBal = document.getElementById('payCreditBal');
+      const payPartnerBal = document.getElementById('payPartnerCreditBal');
+      if (payCreditBal) payCreditBal.textContent = `฿ ${formatCurrency(user.credit || 0)}`;
+      if (payPartnerBal) payPartnerBal.textContent = `฿ ${formatCurrency(user.partner_credit || 0)}`;
+    } else {
+      partnerChoiceEl.classList.add('hidden');
+    }
+  }
 
   // Calculate default price
   updateRentCalculation(machine);
@@ -477,13 +506,16 @@ async function confirmRental() {
   btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px"></div>';
 
   try {
+    const payment_method = document.querySelector('input[name="rentalPaymentMethod"]:checked')?.value || 'credit';
+
     const data = await apiFetch('/api/rent', {
       method: 'POST',
       body: { 
         machine_id: selectedMachineId, 
         duration_hours: selectedDuration,
         rent_unit: currentRentUnit,
-        rent_quantity: currentRentQuantity
+        rent_quantity: currentRentQuantity,
+        payment_method: payment_method
       }
     });
 
@@ -494,7 +526,8 @@ async function confirmRental() {
     // อัปเดตเครดิตใน cache
     const user = getCachedUser();
     if (user) {
-      user.credit = data.rental.new_credit;
+      if (data.rental.new_credit !== undefined) user.credit = data.rental.new_credit;
+      if (data.rental.new_partner_credit !== undefined) user.partner_credit = data.rental.new_partner_credit;
       setCachedUser(user);
       updateNavbar(user);
     }

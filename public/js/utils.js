@@ -103,6 +103,18 @@ function statusBadge(status) {
   return `<span class="badge ${info.class}">${info.text}</span>`;
 }
 
+// --- Tuya Power Badge ---
+function tuyaPowerBadge(powerState) {
+  if (powerState === true) {
+    return `<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 backdrop-blur-md flex items-center gap-1 shadow-sm font-mono"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>⚡ เครื่องเปิดอยู่</span>`;
+  }
+  if (powerState === false) {
+    return `<span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-red-500/20 text-red-300 border border-red-500/40 backdrop-blur-md flex items-center gap-1 shadow-sm font-mono"><span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>🔌 เครื่องปิดอยู่</span>`;
+  }
+  return '';
+}
+
+
 // --- Category Label ---
 function categoryLabel(cat) {
   return cat === 'gaming'

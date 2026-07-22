@@ -153,8 +153,62 @@ async function sendTuyaCommand(deviceId, switchOn) {
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.msg || 'Tuya command error');
+  // อัปเดต cache ทันทีเมื่อส่งคำสั่งสำเร็จ
+  tuyaStatusCache.set(deviceId, { val: switchOn, timestamp: Date.now() });
   return data;
 }
+
+// ดึงสถานะปัจจุบันของอุปกรณ์ Tuya (switch_1: true = เปิด, false = ปิด)
+async function getTuyaDeviceStatus(deviceId) {
+  if (!TUYA_CLIENT_ID || !TUYA_CLIENT_SECRET || !deviceId) return null;
+  try {
+    const accessToken = await getTuyaAccessToken();
+    const t = Date.now().toString();
+    const method = 'GET';
+    const path = `/v1.0/devices/${deviceId}/status`;
+    const contentHash = crypto.createHash('sha256').update('').digest('hex');
+    const stringToSign = [method, contentHash, '', path].join('\n');
+    const str = TUYA_CLIENT_ID + accessToken + t + stringToSign;
+    const sign = crypto.createHmac('sha256', TUYA_CLIENT_SECRET)
+      .update(str).digest('hex').toUpperCase();
+
+    const res = await fetch(`${TUYA_HOST}${path}`, {
+      method,
+      headers: {
+        'client_id': TUYA_CLIENT_ID,
+        'access_token': accessToken,
+        't': t,
+        'sign': sign,
+        'sign_method': 'HMAC-SHA256'
+      }
+    });
+    const data = await res.json();
+    if (data.success && Array.isArray(data.result)) {
+      const switchItem = data.result.find(item => item.code === 'switch_1' || item.code.startsWith('switch'));
+      if (switchItem) {
+        return switchItem.value === true;
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error(`Tuya status error (${deviceId}):`, err.message);
+    return null;
+  }
+}
+
+// In-memory cache สำหรับ Tuya status เพื่อป้องกันความล่าช้าและ Rate Limit
+const tuyaStatusCache = new Map();
+async function getTuyaDeviceStatusCached(deviceId) {
+  const cached = tuyaStatusCache.get(deviceId);
+  const now = Date.now();
+  if (cached && (now - cached.timestamp < 10000)) { // Cache 10 วินาที
+    return cached.val;
+  }
+  const val = await getTuyaDeviceStatus(deviceId);
+  tuyaStatusCache.set(deviceId, { val, timestamp: now });
+  return val;
+}
+
 
 // --- Middleware ---
 // Force HTTPS redirect
@@ -206,6 +260,13 @@ function adminMiddleware(req, res, next) {
   next();
 }
 
+function partnerMiddleware(req, res, next) {
+  if (req.user.role !== 'partner' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'คุณไม่มีสิทธิ์เข้าถึงส่วนนี้ (สำหรับพาร์ทเนอร์เท่านั้น)' });
+  }
+  next();
+}
+
 // สร้าง JWT Token
 function generateToken(user) {
   return jwt.sign(
@@ -215,16 +276,98 @@ function generateToken(user) {
   );
 }
 
+// --- Anti-Bot & Rate Limiting for Registration ---
+const registerIpMap = new Map();
+let globalRegisterWindow = { count: 0, startTime: Date.now() };
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, data] of registerIpMap.entries()) {
+    if (now - data.firstAttempt > 3600000) {
+      registerIpMap.delete(ip);
+    }
+  }
+}, 300000);
+
+function registerRateLimiter(req, res, next) {
+  const now = Date.now();
+
+  // 1. Global Rate Limit: Max 10 registration attempts per 60 seconds site-wide
+  if (now - globalRegisterWindow.startTime > 60000) {
+    globalRegisterWindow = { count: 1, startTime: now };
+  } else {
+    globalRegisterWindow.count += 1;
+  }
+
+  if (globalRegisterWindow.count > 10) {
+    return res.status(429).json({ error: 'มีผู้สมัครสมาชิกมากเกินไปในขณะนี้ กรุณาลองใหม่อีกครั้งใน 1 นาที' });
+  }
+
+  // 2. IP Rate Limit: Max 2 registrations per 15 minutes per IP
+  const rawIp = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+  const ip = rawIp.split(',')[0].trim();
+  const windowMs = 15 * 60 * 1000; // 15 นาที
+  const maxRequests = 2; // สูงสุด 2 ครั้ง ต่อ 15 นาที
+
+  const record = registerIpMap.get(ip) || { count: 0, firstAttempt: now };
+  if (now - record.firstAttempt > windowMs) {
+    record.count = 1;
+    record.firstAttempt = now;
+  } else {
+    record.count += 1;
+  }
+  registerIpMap.set(ip, record);
+
+  if (record.count > maxRequests) {
+    return res.status(429).json({ error: 'มีการสมัครสมาชิกถี่เกินไปจาก IP นี้ กรุณาลองใหม่อีกครั้งใน 15 นาที' });
+  }
+  next();
+}
+
 // =============================================
 // AUTH ROUTES
 // =============================================
 
 // POST /api/register — สมัครสมาชิก
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', registerRateLimiter, async (req, res) => {
   try {
-    const { username, password, turnstileToken } = req.body;
+    const { username, password, turnstileToken, website_hp } = req.body;
+
+    // --- Honeypot Trap Check (Bot Defense) ---
+    if (website_hp && website_hp.trim() !== '') {
+      console.warn(`[AntiBot Trap] Blocked honeypot submission from IP: ${req.ip}`);
+      return res.status(400).json({ error: 'การสมัครสมาชิกถูกปฏิเสธ (Automated script detected)' });
+    }
+
+    // --- User-Agent Check ---
+    const userAgent = (req.headers['user-agent'] || '').toLowerCase();
+    if (!userAgent || userAgent.includes('python') || userAgent.includes('curl') || userAgent.includes('postman') || userAgent.includes('axios') || userAgent.includes('httpclient') || userAgent.includes('scrapy')) {
+      console.warn(`[AntiBot Trap] Blocked suspicious User-Agent: "${userAgent}"`);
+      return res.status(400).json({ error: 'การสมัครสมาชิกถูกปฏิเสธ (Suspicious Client)' });
+    }
+
     if (!username || !password) {
       return res.status(400).json({ error: 'กรุณากรอก Username และ Password' });
+    }
+
+    const usernameTrimmed = username.trim();
+    if (usernameTrimmed.length < 3 || usernameTrimmed.length > 20) {
+      return res.status(400).json({ error: 'Username ต้องมีความยาว 3-20 ตัวอักษร' });
+    }
+
+    // อนุญาตเฉพาะตัวอักษรภาษาอังกฤษ, ภาษาไทย, ตัวเลข และ _ เท่านั้น (ความยาว 3-20 ตัวอักษร, ห้ามใส่อีโมจิ/สัญลักษณ์)
+    const usernameRegex = /^[a-zA-Z0-9_\u0E00-\u0E7F]{3,20}$/;
+    if (!usernameRegex.test(usernameTrimmed)) {
+      return res.status(400).json({ error: 'Username ต้องเป็นตัวอักษรภาษาอังกฤษ ภาษาไทย ตัวเลข หรือ _ ความยาว 3-20 ตัวอักษรเท่านั้น (ห้ามใส่อีโมจิหรือสัญลักษณ์พิเศษ)' });
+    }
+
+    // Explicit check against Emojis / Surrogate Pairs / Non-Thai Non-ASCII
+    if (/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(usernameTrimmed) || /[^\x00-\x7F\u0E00-\u0E7F]/.test(usernameTrimmed)) {
+      return res.status(400).json({ error: 'ไม่อนุญาตให้ใช้ตัวอักษรพิเศษหรืออีโมจิใน Username' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password ต้องมีอย่างน้อย 6 ตัวอักษร' });
     }
 
     // --- Cloudflare Turnstile Verification ---
@@ -234,7 +377,8 @@ app.post('/api/register', async (req, res) => {
         return res.status(400).json({ error: 'กรุณายืนยันการตรวจสอบสิทธิ์ (Turnstile Token Missing)' });
       }
       try {
-        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        const rawIp = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+        const ip = rawIp.split(',')[0].trim();
         const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -251,18 +395,11 @@ app.post('/api/register', async (req, res) => {
       }
     }
 
-    if (username.length < 3) {
-      return res.status(400).json({ error: 'Username ต้องมีอย่างน้อย 3 ตัวอักษร' });
-    }
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password ต้องมีอย่างน้อย 6 ตัวอักษร' });
-    }
-
     // ตรวจสอบ username ซ้ำ
     const { data: existing } = await supabase
       .from('users')
       .select('id')
-      .eq('username', username)
+      .eq('username', usernameTrimmed)
       .single();
 
     if (existing) {
@@ -275,7 +412,7 @@ app.post('/api/register', async (req, res) => {
     // สร้าง user
     const { data: newUser, error } = await supabase
       .from('users')
-      .insert({ username, password_hash, credit: 0, role: 'user' })
+      .insert({ username: usernameTrimmed, password_hash, credit: 0, role: 'user' })
       .select('id, username, credit, role, created_at')
       .single();
 
@@ -354,6 +491,7 @@ app.post('/api/login', async (req, res) => {
         id: user.id,
         username: user.username,
         credit: user.credit,
+        partner_credit: user.partner_credit || 0,
         role: user.role,
         created_at: user.created_at
       }
@@ -369,7 +507,7 @@ app.get('/api/me', authMiddleware, async (req, res) => {
   try {
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, username, credit, role, created_at')
+      .select('id, username, credit, partner_credit, role, created_at')
       .eq('id', req.user.id)
       .single();
 
@@ -404,6 +542,26 @@ app.get('/api/machines', async (req, res) => {
 
     if (machinesRes.error) throw machinesRes.error;
 
+    // ดึงชื่อพาร์ทเนอร์เจ้าของเครื่อง
+    const partnerOwnerIds = [...new Set(machinesRes.data.filter(m => m.owner_type === 'partner' && m.owner_id).map(m => m.owner_id))];
+    let partnerNameMap = {};
+    if (partnerOwnerIds.length > 0) {
+      const { data: partnerUsers } = await supabase.from('users').select('id, username').in('id', partnerOwnerIds);
+      if (partnerUsers) {
+        partnerUsers.forEach(pu => { partnerNameMap[pu.id] = pu.username; });
+      }
+    }
+
+    // ดึงสถานะ Tuya power สำหรับเครื่องที่มี tuya_device_id
+    const tuyaStatusMap = {};
+    if (TUYA_CLIENT_ID && TUYA_CLIENT_SECRET) {
+      const machinesWithTuya = machinesRes.data.filter(m => m.tuya_device_id);
+      await Promise.allSettled(machinesWithTuya.map(async (m) => {
+        const powerState = await getTuyaDeviceStatusCached(m.tuya_device_id);
+        tuyaStatusMap[m.id] = powerState;
+      }));
+    }
+
     // ซ่อนข้อมูลส่วนตัวจาก response สาธารณะ — จะส่งแยกเฉพาะผู้เช่า
     const sanitized = machinesRes.data.map(m => {
       const machine = { ...m };
@@ -414,6 +572,8 @@ app.get('/api/machines', async (req, res) => {
       delete machine.anydesk_password;
       delete machine.tuya_device_id;
       machine.is_power_out = settings[`outage_machine_${m.id}`] === 'true';
+      machine.owner_username = partnerNameMap[m.owner_id] || null;
+      machine.tuya_power = tuyaStatusMap[m.id] !== undefined ? tuyaStatusMap[m.id] : null;
       return machine;
     });
 
@@ -566,7 +726,7 @@ app.post('/api/machines/:id/power-user', authMiddleware, async (req, res) => {
 // POST /api/rent — เช่าเครื่อง (Atomic Transaction)
 app.post('/api/rent', authMiddleware, async (req, res) => {
   try {
-    const { machine_id, duration_hours, rent_unit, rent_quantity } = req.body;
+    const { machine_id, duration_hours, rent_unit, rent_quantity, payment_method } = req.body;
     if (!machine_id) {
       return res.status(400).json({ error: 'กรุณาเลือกเครื่องคอมพิวเตอร์' });
     }
@@ -647,29 +807,65 @@ app.post('/api/rent', authMiddleware, async (req, res) => {
       }
     }
 
-    // ตรวจสอบเครดิต
+    // ดึงข้อมูลเครดิตผู้ใช้
     const { data: user, error: usrErr } = await supabase
       .from('users')
-      .select('credit')
+      .select('credit, partner_credit, role')
       .eq('id', req.user.id)
       .single();
 
-    if (parseFloat(user.credit) < total_price) {
+    if (usrErr || !user) return res.status(404).json({ error: 'ไม่พบข้อมูลผู้ใช้' });
+
+    // ระบุวิธีการชำระเงิน (อนุญาตให้ใช้ partner_credit เฉพาะยศ partner หรือ admin เท่านั้น)
+    let usePaymentMethod = 'credit';
+    if (payment_method === 'partner_credit' && (user.role === 'partner' || user.role === 'admin')) {
+      usePaymentMethod = 'partner_credit';
+    }
+
+    const currentBalance = usePaymentMethod === 'partner_credit' 
+      ? parseFloat(user.partner_credit || 0) 
+      : parseFloat(user.credit || 0);
+
+    if (currentBalance < total_price) {
       return res.status(400).json({
-        error: 'เครดิตไม่เพียงพอ',
+        error: `เครดิต${usePaymentMethod === 'partner_credit' ? 'รายได้พาร์ทเนอร์' : ''}ไม่เพียงพอ`,
         required: total_price,
-        current: parseFloat(user.credit)
+        current: currentBalance
       });
     }
 
-    // หักเครดิต
-    const newCredit = parseFloat(user.credit) - total_price;
+    // หักเครดิตตามกระเป๋าเงินที่เลือก
+    const newBalance = currentBalance - total_price;
+    const userUpdates = {};
+    if (usePaymentMethod === 'partner_credit') {
+      userUpdates.partner_credit = newBalance;
+    } else {
+      userUpdates.credit = newBalance;
+    }
+
     const { error: creditErr } = await supabase
       .from('users')
-      .update({ credit: newCredit })
+      .update(userUpdates)
       .eq('id', req.user.id);
 
     if (creditErr) throw creditErr;
+
+    // หากเครื่องคอมพิวเตอร์เป็นของพาร์ทเนอร์ ให้โอนยอดรายรับเข้า partner_credit ของพาร์ทเนอร์เจ้าของเครื่อง
+    if (machine.owner_type === 'partner' && machine.owner_id) {
+      const { data: ownerUser } = await supabase
+        .from('users')
+        .select('partner_credit')
+        .eq('id', machine.owner_id)
+        .single();
+
+      if (ownerUser) {
+        const newOwnerPartnerCredit = parseFloat(ownerUser.partner_credit || 0) + total_price;
+        await supabase
+          .from('users')
+          .update({ partner_credit: newOwnerPartnerCredit })
+          .eq('id', machine.owner_id);
+      }
+    }
 
     // อัปเดตสถานะเครื่อง
     const sessionEnd = new Date(Date.now() + computed_duration_hours * 60 * 60 * 1000);
@@ -703,6 +899,7 @@ app.post('/api/rent', authMiddleware, async (req, res) => {
         machine_name: machine.name,
         duration_hours: computed_duration_hours,
         total_price: total_price,
+        payment_method: usePaymentMethod,
         started_at: new Date().toISOString(),
         ended_at: sessionEnd.toISOString(),
         status: 'active'
@@ -718,7 +915,8 @@ app.post('/api/rent', authMiddleware, async (req, res) => {
         duration_hours: computed_duration_hours,
         total_price,
         session_end_time: sessionEnd.toISOString(),
-        new_credit: newCredit
+        new_credit: usePaymentMethod === 'credit' ? newBalance : user.credit,
+        new_partner_credit: usePaymentMethod === 'partner_credit' ? newBalance : user.partner_credit
       }
     });
   } catch (err) {
@@ -1869,13 +2067,65 @@ app.post('/api/admin/upload-popup', authMiddleware, adminMiddleware, (req, res, 
 // ADMIN ROUTES
 // =============================================
 
+// POST /api/admin/clean-bots — ล้างบัญชีบอทที่มีลักษณะต้องสงสัยและไม่มีประวัติใช้งาน
+app.post('/api/admin/clean-bots', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, username, credit, created_at')
+      .eq('role', 'user');
+
+    if (error) throw error;
+
+    const regex = /^[a-zA-Z0-9_\u0E00-\u0E7F]{3,20}$/;
+    const suspiciousBots = users.filter(u => {
+      return !regex.test(u.username) || /[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(u.username) || /[🔥🚀💀😀🌟]/.test(u.username);
+    });
+
+    if (suspiciousBots.length === 0) {
+      return res.json({ success: true, count: 0, message: 'ไม่พบบัญชีบอทต้องสงสัย' });
+    }
+
+    const botIds = suspiciousBots.map(b => b.id);
+
+    const [rentalsRes, topupsRes] = await Promise.all([
+      supabase.from('rentals').select('user_id').in('user_id', botIds),
+      supabase.from('topups').select('user_id').in('user_id', botIds)
+    ]);
+
+    const activeUserIds = new Set([
+      ...(rentalsRes.data || []).map(r => r.user_id),
+      ...(topupsRes.data || []).map(t => t.user_id),
+      ...suspiciousBots.filter(b => b.credit > 0).map(b => b.id)
+    ]);
+
+    const toDeleteIds = botIds.filter(id => !activeUserIds.has(id));
+
+    if (toDeleteIds.length === 0) {
+      return res.json({ success: true, count: 0, message: 'ไม่พบบัญชีบอทที่ปลอดภัยต่อการลบ' });
+    }
+
+    const { error: deleteErr } = await supabase
+      .from('users')
+      .delete()
+      .in('id', toDeleteIds);
+
+    if (deleteErr) throw deleteErr;
+
+    res.json({ success: true, count: toDeleteIds.length, message: `ลบบัญชีบอทสำเร็จทั้งหมด ${toDeleteIds.length} รายการ` });
+  } catch (err) {
+    console.error('Clean bots error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการลบบัญชีบอท' });
+  }
+});
+
 // GET /api/admin/stats — สรุปภาพรวม
 app.get('/api/admin/stats', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const [machines, users, rentals, topups] = await Promise.all([
-      supabase.from('machines').select('id, status'),
+      supabase.from('machines').select('id, status, owner_type'),
       supabase.from('users').select('id', { count: 'exact' }),
-      supabase.from('rentals').select('id, total_price, status'),
+      supabase.from('rentals').select('id, machine_id, total_price, status'),
       supabase.from('topups').select('id, amount, status').eq('status', 'approved')
     ]);
 
@@ -1883,7 +2133,14 @@ app.get('/api/admin/stats', authMiddleware, adminMiddleware, async (req, res) =>
     const activeMachines = machines.data?.filter(m => m.status === 'in_use').length || 0;
     const totalUsers = users.count || 0;
     const totalRentals = rentals.data?.length || 0;
-    const totalRevenue = rentals.data?.reduce((sum, r) => sum + parseFloat(r.total_price || 0), 0) || 0;
+
+    // กรองรายได้: เฉพาะเครื่องของแอดมินเท่านั้น (เครื่องของพาร์ทเนอร์จะไม่ถูกนำมารวมในรายได้หลักของร้านแอดมิน)
+    const partnerMachineIds = new Set(
+      (machines.data || []).filter(m => m.owner_type === 'partner').map(m => m.id)
+    );
+    const adminRentals = (rentals.data || []).filter(r => !partnerMachineIds.has(r.machine_id));
+    const totalRevenue = adminRentals.reduce((sum, r) => sum + parseFloat(r.total_price || 0), 0) || 0;
+
     const totalTopups = topups.data?.reduce((sum, t) => sum + parseFloat(t.amount || 0), 0) || 0;
 
     res.json({
@@ -1916,6 +2173,23 @@ app.get('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res)
   }
 });
 
+// GET /api/admin/partners — ดึงรายชื่อผู้ใช้ที่เป็นพาร์ทเนอร์ทั้งหมด
+app.get('/api/admin/partners', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { data: partners, error } = await supabase
+      .from('users')
+      .select('id, username, credit, partner_credit, created_at')
+      .eq('role', 'partner')
+      .order('username');
+
+    if (error) throw error;
+    res.json({ partners: partners || [] });
+  } catch (err) {
+    console.error('Get admin partners error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลพาร์ทเนอร์' });
+  }
+});
+
 // POST /api/admin/machines — เพิ่มเครื่องใหม่
 app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res) => {
   try {
@@ -1923,11 +2197,15 @@ app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res
             rdp_ip, rdp_username, rdp_password,
             anydesk_id, anydesk_password, tuya_device_id,
             image_url,
-            allow_daily, allow_weekly, allow_monthly, test_result } = req.body;
+            allow_daily, allow_weekly, allow_monthly, test_result,
+            owner_type, owner_id } = req.body;
 
     if (!name || !category || !price_per_hour || !price_per_day) {
       return res.status(400).json({ error: 'กรุณากรอกข้อมูลที่จำเป็น' });
     }
+
+    const ownerTypeVal = owner_type === 'partner' ? 'partner' : 'admin';
+    const ownerIdVal = (ownerTypeVal === 'partner' && owner_id) ? owner_id : null;
 
     const { data, error } = await supabase
       .from('machines')
@@ -1946,7 +2224,9 @@ app.post('/api/admin/machines', authMiddleware, adminMiddleware, async (req, res
         allow_daily: allow_daily !== undefined ? (allow_daily === true || allow_daily === 'true') : true,
         allow_weekly: allow_weekly !== undefined ? (allow_weekly === true || allow_weekly === 'true') : true,
         allow_monthly: allow_monthly !== undefined ? (allow_monthly === true || allow_monthly === 'true') : true,
-        test_result: test_result || null
+        test_result: test_result || null,
+        owner_type: ownerTypeVal,
+        owner_id: ownerIdVal
       })
       .select()
       .single();
@@ -1966,7 +2246,11 @@ app.put('/api/admin/machines/:id', authMiddleware, adminMiddleware, async (req, 
             rdp_ip, rdp_username, rdp_password,
             anydesk_id, anydesk_password, tuya_device_id,
             image_url,
-            allow_daily, allow_weekly, allow_monthly, test_result } = req.body;
+            allow_daily, allow_weekly, allow_monthly, test_result,
+            owner_type, owner_id } = req.body;
+
+    const ownerTypeVal = owner_type === 'partner' ? 'partner' : 'admin';
+    const ownerIdVal = (ownerTypeVal === 'partner' && owner_id) ? owner_id : null;
 
     const { data, error } = await supabase
       .from('machines')
@@ -1984,7 +2268,9 @@ app.put('/api/admin/machines/:id', authMiddleware, adminMiddleware, async (req, 
         allow_daily: allow_daily !== undefined ? (allow_daily === true || allow_daily === 'true') : true,
         allow_weekly: allow_weekly !== undefined ? (allow_weekly === true || allow_weekly === 'true') : true,
         allow_monthly: allow_monthly !== undefined ? (allow_monthly === true || allow_monthly === 'true') : true,
-        test_result: test_result || null
+        test_result: test_result || null,
+        owner_type: ownerTypeVal,
+        owner_id: ownerIdVal
       })
       .eq('id', parseInt(req.params.id))
       .select()
@@ -2173,7 +2459,7 @@ app.get('/api/admin/users', authMiddleware, adminMiddleware, async (req, res) =>
     const [usersRes, machinesRes, settings] = await Promise.all([
       supabase
         .from('users')
-        .select('id, username, credit, role, created_at')
+        .select('id, username, credit, partner_credit, role, created_at')
         .order('created_at', { ascending: false }),
       supabase
         .from('machines')
@@ -2535,6 +2821,107 @@ app.put('/api/admin/users/:id/credit', authMiddleware, adminMiddleware, async (r
   } catch (err) {
     console.error('Update credit error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดในการปรับปรุงยอดเงิน' });
+  }
+});
+
+// PUT /api/admin/users/:id/role — เปลี่ยนยศผู้ใช้งาน (user, admin, partner)
+app.put('/api/admin/users/:id/role', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+
+    if (!role || !['user', 'admin', 'partner'].includes(role)) {
+      return res.status(400).json({ error: 'ยศผู้ใช้ต้องเป็น user, admin หรือ partner เท่านั้น' });
+    }
+
+    const { data: targetUser, error: findErr } = await supabase
+      .from('users')
+      .select('id, username, role')
+      .eq('id', id)
+      .single();
+
+    if (findErr || !targetUser) {
+      return res.status(404).json({ error: 'ไม่พบผู้ใช้ในระบบ' });
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .update({ role })
+      .eq('id', id)
+      .select('id, username, role')
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: `เปลี่ยนยศผู้ใช้ ${targetUser.username} เป็น ${role} สำเร็จ`,
+      user: data
+    });
+  } catch (err) {
+    console.error('Update user role error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการเปลี่ยนยศผู้ใช้' });
+  }
+});
+
+// POST /api/admin/clean-bots — ลบบัญชีผู้ใช้ที่เป็นบอทสแปม (ไม่มีประวัติการเช่า/เติมเงิน และสมัครมาแล้วเกิน 7 วัน)
+app.post('/api/admin/clean-bots', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const daysNum = parseInt(req.body?.days) || 7; // กำหนดค่าเริ่มต้น 7 วัน
+    const cutoffDate = new Date(Date.now() - (daysNum * 24 * 60 * 60 * 1000)).toISOString();
+
+    // 1. ดึงเฉพาะผู้ใช้ที่สมัครมาแล้วเกิน 7 วันขึ้นไป (ป้องกันการลบลูกค้าใหม่ที่เพิ่งสมัคร)
+    const { data: candidateUsers, error: uErr } = await supabase
+      .from('users')
+      .select('id, username, created_at')
+      .eq('role', 'user')
+      .eq('credit', 0)
+      .or('partner_credit.eq.0,partner_credit.is.null')
+      .lt('created_at', cutoffDate);
+
+    if (uErr) throw uErr;
+    if (!candidateUsers || candidateUsers.length === 0) {
+      return res.json({ success: true, message: 'ไม่พบบัญชีบอทที่เข้าเงื่อนไขในขณะนี้', deletedCount: 0 });
+    }
+
+    const candidateIds = candidateUsers.map(u => u.id);
+
+    // 2. ดึง user_id จากตารางที่มีความเคลื่อนไหว (rentals, topups, withdrawals)
+    const [rRes, tRes, wRes] = await Promise.all([
+      supabase.from('rentals').select('user_id').in('user_id', candidateIds),
+      supabase.from('topups').select('user_id').in('user_id', candidateIds),
+      supabase.from('partner_withdrawals').select('user_id').in('user_id', candidateIds)
+    ]);
+
+    const activeUserIds = new Set([
+      ...(rRes.data || []).map(x => x.user_id),
+      ...(tRes.data || []).map(x => x.user_id),
+      ...(wRes.data || []).map(x => x.user_id)
+    ]);
+
+    // 3. กรองเหลือเฉพาะผู้ใช้ที่ไม่เคยมีประวัติกิจกรรมใดๆ เลย (ไอดีบอทสแปม)
+    const botUserIds = candidateIds.filter(id => !activeUserIds.has(id));
+
+    if (botUserIds.length === 0) {
+      return res.json({ success: true, message: 'ไม่พบบัญชีบอทที่เข้าเงื่อนไขในขณะนี้', deletedCount: 0 });
+    }
+
+    // 4. ลบบัญชีบอทเหล่านั้นออกจากฐานข้อมูล
+    const { error: delErr } = await supabase
+      .from('users')
+      .delete()
+      .in('id', botUserIds);
+
+    if (delErr) throw delErr;
+
+    res.json({
+      success: true,
+      message: `ล้างไอดีบอทสำเร็จจำนวน ${botUserIds.length} บัญชี`,
+      deletedCount: botUserIds.length
+    });
+  } catch (err) {
+    console.error('Clean bot accounts error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการล้างบัญชีบอท' });
   }
 });
 
@@ -3653,6 +4040,383 @@ async function autoReleaseExpiredMachines() {
 
 // รันทุก 30 วินาที
 setInterval(autoReleaseExpiredMachines, 30000);
+
+// =============================================
+// PARTNER & FINANCIAL API ROUTES
+// =============================================
+
+// GET /api/partner/dashboard — ดึงข้อมูลสรุปแดชบอร์ดสำหรับพาร์ทเนอร์
+app.get('/api/partner/dashboard', authMiddleware, partnerMiddleware, async (req, res) => {
+  try {
+    const partnerId = req.user.id;
+
+    // 1. ดึงโปรไฟล์และยอดเครดิตพาร์ทเนอร์ปัจจุบัน
+    const { data: partnerUser, error: pErr } = await supabase
+      .from('users')
+      .select('id, username, credit, partner_credit, created_at')
+      .eq('id', partnerId)
+      .single();
+
+    if (pErr || !partnerUser) {
+      return res.status(404).json({ error: 'ไม่พบข้อมูลผู้ใช้พาร์ทเนอร์' });
+    }
+
+    // 2. ดึงรายการเครื่องคอมพิวเตอร์ของพาร์ทเนอร์คนนี้
+    const { data: myMachines } = await supabase
+      .from('machines')
+      .select('*')
+      .eq('owner_id', partnerId)
+      .order('id');
+
+    const machineIds = (myMachines || []).map(m => m.id);
+
+    // 3. คำนวณรายได้จากการเช่าเครื่องของพาร์ทเนอร์คนนี้
+    let totalRevenue = 0;
+    let todayRevenue = 0;
+    let monthRevenue = 0;
+    let rentalsList = [];
+
+    if (machineIds.length > 0) {
+      const { data: rentalsData } = await supabase
+        .from('rentals')
+        .select('*')
+        .in('machine_id', machineIds)
+        .order('created_at', { ascending: false });
+
+      rentalsList = rentalsData || [];
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+      rentalsList.forEach(r => {
+        const price = parseFloat(r.total_price || 0);
+        totalRevenue += price;
+        const rTime = new Date(r.created_at || r.started_at).getTime();
+        if (rTime >= startOfToday) {
+          todayRevenue += price;
+        }
+        if (rTime >= startOfMonth) {
+          monthRevenue += price;
+        }
+      });
+    }
+
+    // 4. ดึงประวัติคำขอถอนเงิน
+    const { data: withdrawals } = await supabase
+      .from('partner_withdrawals')
+      .select('*')
+      .eq('user_id', partnerId)
+      .order('created_at', { ascending: false });
+
+    const totalWithdrawn = (withdrawals || [])
+      .filter(w => w.status === 'approved')
+      .reduce((sum, w) => sum + parseFloat(w.amount || 0), 0);
+
+    res.json({
+      success: true,
+      partner: partnerUser,
+      machines: myMachines || [],
+      stats: {
+        partner_credit: parseFloat(partnerUser.partner_credit || 0),
+        total_revenue: totalRevenue,
+        today_revenue: todayRevenue,
+        month_revenue: monthRevenue,
+        total_withdrawn: totalWithdrawn,
+        total_machines: (myMachines || []).length
+      },
+      withdrawals: withdrawals || [],
+      recent_rentals: rentalsList.slice(0, 30)
+    });
+  } catch (err) {
+    console.error('Get partner dashboard error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงข้อมูลแดชบอร์ดพาร์ทเนอร์' });
+  }
+});
+
+// POST /api/partner/withdraw — แจ้งขอถอนเงินพาร์ทเนอร์
+app.post('/api/partner/withdraw', authMiddleware, partnerMiddleware, async (req, res) => {
+  try {
+    const partnerId = req.user.id;
+    const { amount, bank_name, bank_account, account_name } = req.body;
+
+    const numericAmount = parseFloat(amount);
+    if (isNaN(numericAmount) || numericAmount < 100) {
+      return res.status(400).json({ error: 'จำนวนเงินที่ต้องการถอนต้องมีขั้นต่ำ 100 บาท/เครดิต' });
+    }
+
+    if (!bank_name || !bank_account || !account_name) {
+      return res.status(400).json({ error: 'กรุณากรอกข้อมูลธนาคาร เลขบัญชี และชื่อบัญชีให้ครบถ้วน' });
+    }
+
+    const cleanBankName = String(bank_name).trim().slice(0, 100);
+    const cleanBankAccount = String(bank_account).trim().slice(0, 100);
+    const cleanAccountName = String(account_name).trim().slice(0, 100);
+
+    // ดึงข้อมูลผู้ใช้จาก DB ล่าสุดเพื่อตรวจสอบยศและยอดเงินคงเหลือจริง
+    const { data: user, error: userErr } = await supabase
+      .from('users')
+      .select('partner_credit, role')
+      .eq('id', partnerId)
+      .single();
+
+    if (userErr || !user) {
+      return res.status(404).json({ error: 'ไม่พบผู้ใช้นี้ในระบบ' });
+    }
+
+    if (user.role !== 'partner' && user.role !== 'admin') {
+      return res.status(403).json({ error: 'คุณไม่มีสิทธิ์ถอนเงิน (บัญชีนี้ไม่ได้มียศพาร์ทเนอร์)' });
+    }
+
+    // ป้องกัน Race Condition: ตรวจสอบว่าพาร์ทเนอร์มีรายการถอนที่รอแอดมินดำเนินการ (pending) อยู่แล้วหรือไม่
+    const { data: pendingWithdrawals } = await supabase
+      .from('partner_withdrawals')
+      .select('id')
+      .eq('user_id', partnerId)
+      .eq('status', 'pending')
+      .limit(1);
+
+    if (pendingWithdrawals && pendingWithdrawals.length > 0) {
+      return res.status(400).json({ error: 'คุณมีรายการแจ้งถอนเงินที่รอแอดมินดำเนินการอยู่แล้ว กรุณารอให้รายการเดิมเสร็จสิ้นก่อนแจ้งถอนใหม่' });
+    }
+
+    const currentPartnerCredit = parseFloat(user.partner_credit || 0);
+    if (currentPartnerCredit < numericAmount) {
+      return res.status(400).json({
+        error: 'ยอดเครดิตพาร์ทเนอร์ไม่เพียงพอสำหรับถอนเงิน',
+        current: currentPartnerCredit,
+        requested: numericAmount
+      });
+    }
+
+    // คำนวณค่าธรรมเนียม 10%
+    const fee = Math.round(numericAmount * 0.10 * 100) / 100;
+    const netAmount = numericAmount - fee;
+
+    // หักยอด partner_credit ทันที
+    const newPartnerCredit = currentPartnerCredit - numericAmount;
+    const { error: updateErr } = await supabase
+      .from('users')
+      .update({ partner_credit: newPartnerCredit })
+      .eq('id', partnerId);
+
+    if (updateErr) throw updateErr;
+
+    // บันทึกคำขอถอนเงิน
+    const { data: withdrawal, error: withdrawErr } = await supabase
+      .from('partner_withdrawals')
+      .insert({
+        user_id: partnerId,
+        amount: numericAmount,
+        fee: fee,
+        net_amount: netAmount,
+        bank_name: cleanBankName,
+        bank_account: cleanBankAccount,
+        account_name: cleanAccountName,
+        status: 'pending'
+      })
+      .select()
+      .single();
+
+    if (withdrawErr) throw withdrawErr;
+
+    res.json({
+      success: true,
+      message: `ส่งคำขอถอนเงินสำเร็จ ยอดถอน ${numericAmount} บาท (ค่าธรรมเนียม 10%: ${fee} บาท, ยอดโอนจริง: ${netAmount} บาท)`,
+      new_partner_credit: newPartnerCredit,
+      withdrawal
+    });
+  } catch (err) {
+    console.error('Partner withdraw error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการแจ้งถอนเงิน' });
+  }
+});
+
+// GET /api/partner/withdrawals — ประวัติการแจ้งถอนเงินของตนเอง
+app.get('/api/partner/withdrawals', authMiddleware, partnerMiddleware, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('partner_withdrawals')
+      .select('*')
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ withdrawals: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงประวัติการถอนเงิน' });
+  }
+});
+
+// GET /api/admin/withdrawals — รายการถอนเงินพาร์ทเนอร์ทั้งหมด (Admin only)
+app.get('/api/admin/withdrawals', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('partner_withdrawals')
+      .select('*, users!inner(username)')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ withdrawals: data || [] });
+  } catch (err) {
+    console.error('Get admin withdrawals error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการดึงรายการถอนเงิน' });
+  }
+});
+
+// PUT /api/admin/withdrawals/:id/approve — ยืนยันว่าโอนเงินให้พาร์ทเนอร์สำเร็จแล้ว
+app.put('/api/admin/withdrawals/:id/approve', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { note } = req.body;
+
+    const { data: item, error: findErr } = await supabase
+      .from('partner_withdrawals')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findErr || !item) {
+      return res.status(404).json({ error: 'ไม่พบรายการถอนเงินนี้' });
+    }
+
+    if (item.status !== 'pending') {
+      return res.status(400).json({ error: 'รายการนี้ได้รับการดำเนินการไปแล้ว' });
+    }
+
+    const { data, error } = await supabase
+      .from('partner_withdrawals')
+      .update({
+        status: 'approved',
+        note: note ? note.trim() : 'อนุมัติการโอนเงินโดยแอดมิน',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, message: 'อนุมัติการถอนเงินและบันทึกสถานะสำเร็จ', withdrawal: data });
+  } catch (err) {
+    console.error('Approve withdrawal error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการอนุมัติการถอนเงิน' });
+  }
+});
+
+// PUT /api/admin/withdrawals/:id/reject — ปฏิเสธคำขอถอนเงิน และคืนเงินเครดิตเข้าพาร์ทเนอร์
+app.put('/api/admin/withdrawals/:id/reject', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { note } = req.body;
+
+    const { data: item, error: findErr } = await supabase
+      .from('partner_withdrawals')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findErr || !item) {
+      return res.status(404).json({ error: 'ไม่พบรายการถอนเงินนี้' });
+    }
+
+    if (item.status !== 'pending') {
+      return res.status(400).json({ error: 'รายการนี้ได้รับการดำเนินการไปแล้ว' });
+    }
+
+    // ดึงเครดิตพาร์ทเนอร์ปัจจุบัน
+    const { data: user } = await supabase
+      .from('users')
+      .select('partner_credit')
+      .eq('id', item.user_id)
+      .single();
+
+    if (user) {
+      // คืนยอดเงินเข้ากระเป๋าพาร์ทเนอร์
+      const restoredCredit = parseFloat(user.partner_credit || 0) + parseFloat(item.amount);
+      await supabase
+        .from('users')
+        .update({ partner_credit: restoredCredit })
+        .eq('id', item.user_id);
+    }
+
+    const { data, error } = await supabase
+      .from('partner_withdrawals')
+      .update({
+        status: 'rejected',
+        note: note ? note.trim() : 'ปฏิเสธคำขอถอนเงินโดยแอดมิน (คืนเครดิต)',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({ success: true, message: 'ปฏิเสธรายการถอนเงินและคืนเครดิตให้พาร์ทเนอร์เรียบร้อยแล้ว', withdrawal: data });
+  } catch (err) {
+    console.error('Reject withdrawal error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการปฏิเสธการถอนเงิน' });
+  }
+});
+
+// POST /api/admin/partners/adjust-credit — แอดมินปรับยอดเครดิตพาร์ทเนอร์โดยตรง
+app.post('/api/admin/partners/adjust-credit', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { user_id, amount, action, note } = req.body;
+
+    if (!user_id || amount === undefined || !action || !note) {
+      return res.status(400).json({ error: 'กรุณากรอกข้อมูลให้ครบถ้วน (user_id, amount, action, note)' });
+    }
+
+    const numericAmount = parseFloat(amount);
+    if (isNaN(numericAmount) || numericAmount < 0) {
+      return res.status(400).json({ error: 'จำนวนเงินต้องเป็นตัวเลขที่มากกว่าหรือเท่ากับ 0' });
+    }
+
+    const { data: user, error: userErr } = await supabase
+      .from('users')
+      .select('username, partner_credit')
+      .eq('id', user_id)
+      .single();
+
+    if (userErr || !user) {
+      return res.status(404).json({ error: 'ไม่พบผู้ใช้พาร์ทเนอร์นี้' });
+    }
+
+    const currentPartnerCredit = parseFloat(user.partner_credit || 0);
+    let newPartnerCredit = currentPartnerCredit;
+
+    if (action === 'add') {
+      newPartnerCredit = currentPartnerCredit + numericAmount;
+    } else if (action === 'deduct') {
+      newPartnerCredit = currentPartnerCredit - numericAmount;
+    } else if (action === 'set') {
+      newPartnerCredit = numericAmount;
+    } else {
+      return res.status(400).json({ error: 'รูปแบบการปรับปรุงไม่ถูกต้อง (add, deduct, set)' });
+    }
+
+    if (newPartnerCredit < 0) {
+      return res.status(400).json({ error: 'ยอดเครดิตพาร์ทเนอร์ไม่สามารถต่ำกว่า 0 ได้' });
+    }
+
+    const { error: updateErr } = await supabase
+      .from('users')
+      .update({ partner_credit: newPartnerCredit })
+      .eq('id', user_id);
+
+    if (updateErr) throw updateErr;
+
+    res.json({
+      success: true,
+      message: `ปรับปรุงเครดิตพาร์ทเนอร์ของ ${user.username} สำเร็จ`,
+      new_partner_credit: newPartnerCredit
+    });
+  } catch (err) {
+    console.error('Adjust partner credit error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการปรับปรุงเครดิตพาร์ทเนอร์' });
+  }
+});
 
 // =============================================
 // SPA FALLBACK — ส่ง HTML สำหรับ route ที่ไม่ใช่ API

@@ -16,6 +16,10 @@ document.addEventListener('DOMContentLoaded', () => {
     adminTopupsPage = 1;
     renderAdminTopups();
   });
+  document.getElementById('partnerSearchInput')?.addEventListener('input', () => {
+    renderAdminWithdrawals();
+    renderAdminPartnerUsers();
+  });
 });
 
 async function initAdmin() {
@@ -50,6 +54,7 @@ async function initAdmin() {
     setupMachineForm();
     setupUserCreditForm();
     setupUserTimeForm();
+    setupPartnerCreditForm();
     setupSettingsForm();
     setupElectricityForm();
     setupShopAccountForm();
@@ -65,12 +70,18 @@ async function initAdmin() {
 
 // --- Tab Switching ---
 function switchAdminTab(tab) {
-  ['machines', 'rentals', 'topups', 'users', 'settings', 'finance', 'chat'].forEach(t => {
-    document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
-    document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
+  ['machines', 'rentals', 'topups', 'users', 'partners', 'settings', 'finance', 'chat'].forEach(t => {
+    const panelEl = document.getElementById(`panel-${t}`);
+    const tabEl = document.getElementById(`tab-${t}`);
+    if (panelEl) panelEl.classList.toggle('hidden', t !== tab);
+    if (tabEl) tabEl.classList.toggle('active', t === tab);
   });
   if (tab === 'chat') {
     refreshChatRooms();
+  }
+  if (tab === 'partners') {
+    loadAdminWithdrawals();
+    loadAdminPartnerUsers();
   }
 }
 
@@ -145,7 +156,12 @@ async function loadAdminMachines() {
               <td class="whitespace-nowrap">
                 <span class="text-pink-400 font-bold">฿${formatCurrency(m.price_per_day)}</span><span class="text-gray-500 text-xs">/วัน</span>
               </td>
-              <td>${m.is_power_out ? `<span class="badge bg-red-500/20 text-red-400 border border-red-500/30">🔌 ไฟดับ (หยุดเวลา)</span>` : statusBadge(m.status)}</td>
+              <td>
+                <div class="flex flex-col gap-1 items-start">
+                  ${m.is_power_out ? `<span class="badge bg-red-500/20 text-red-400 border border-red-500/30">🔌 ไฟดับ (หยุดเวลา)</span>` : statusBadge(m.status)}
+                  ${tuyaPowerBadge(m.tuya_power)}
+                </div>
+              </td>
               <td class="text-xs font-mono text-cyan-400">${m.anydesk_id || '-'}</td>
               <td class="whitespace-nowrap">
                 ${m.tuya_device_id ? `
@@ -194,11 +210,37 @@ async function fetchAdminMachinesCache() {
   } catch (e) { adminMachinesCache = []; }
 }
 
-function showAddMachineModal() {
+async function populatePartnerDropdown(selectId, selectedId = '') {
+  const selectEl = document.getElementById(selectId);
+  if (!selectEl) return;
+  try {
+    const res = await apiFetch('/api/admin/partners');
+    const partners = res.partners || [];
+    selectEl.innerHTML = '<option value="">-- เลือกระบุพาร์ทเนอร์ --</option>' + 
+      partners.map(p => `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${p.username} (เครดิต: ฿${formatCurrency(p.partner_credit)})</option>`).join('');
+  } catch (e) {
+    selectEl.innerHTML = '<option value="">-- ไม่สามารถโหลดพาร์ทเนอร์ได้ --</option>';
+  }
+}
+
+function togglePartnerOwnerSelect() {
+  const ownerType = document.getElementById('mf_owner_type')?.value;
+  const wrapper = document.getElementById('mf_partner_select_wrapper');
+  if (wrapper) {
+    wrapper.classList.toggle('hidden', ownerType !== 'partner');
+  }
+}
+
+async function showAddMachineModal() {
   document.getElementById('machineFormTitle').textContent = '➕ เพิ่มเครื่องใหม่';
   document.getElementById('machineFormSubmitBtn').textContent = '💾 เพิ่มเครื่อง';
   document.getElementById('machineForm').reset();
   document.getElementById('mf_id').value = '';
+  if (document.getElementById('mf_owner_type')) {
+    document.getElementById('mf_owner_type').value = 'admin';
+    togglePartnerOwnerSelect();
+    await populatePartnerDropdown('mf_owner_id');
+  }
   document.getElementById('mf_allow_daily').checked = true;
   document.getElementById('mf_allow_weekly').checked = true;
   document.getElementById('mf_allow_monthly').checked = true;
@@ -233,6 +275,11 @@ async function editMachine(id) {
   document.getElementById('mf_allow_weekly').checked = m.allow_weekly !== false;
   document.getElementById('mf_allow_monthly').checked = m.allow_monthly !== false;
   document.getElementById('mf_test_result').value = m.test_result || '';
+  if (document.getElementById('mf_owner_type')) {
+    document.getElementById('mf_owner_type').value = m.owner_type || 'admin';
+    togglePartnerOwnerSelect();
+    await populatePartnerDropdown('mf_owner_id', m.owner_id || '');
+  }
   showModal('machineFormModal');
 }
 
@@ -266,7 +313,9 @@ function setupMachineForm() {
       allow_daily: document.getElementById('mf_allow_daily').checked,
       allow_weekly: document.getElementById('mf_allow_weekly').checked,
       allow_monthly: document.getElementById('mf_allow_monthly').checked,
-      test_result: document.getElementById('mf_test_result').value
+      test_result: document.getElementById('mf_test_result').value,
+      owner_type: document.getElementById('mf_owner_type')?.value || 'admin',
+      owner_id: document.getElementById('mf_owner_id')?.value || ''
     };
 
     try {
@@ -625,15 +674,16 @@ function renderAdminUsers() {
                 : `<span class="text-gray-500 text-sm">-</span>`
               }
             </td>
-            <td class="text-yellow-400 font-bold">฿${formatCurrency(u.credit)}</td>
+            <td class="whitespace-nowrap">
+              <span class="text-yellow-400 font-bold">฿${formatCurrency(u.credit)}</span>
+              ${(u.partner_credit > 0 || u.role === 'partner') ? `<div class="text-[11px] text-purple-400 font-semibold mt-0.5">🤝 ฿${formatCurrency(u.partner_credit || 0)}</div>` : ''}
+            </td>
             <td>
-              <span class="px-2 py-0.5 text-xs rounded-full ${
-                u.role === 'admin'
-                  ? 'bg-pink-500/20 text-pink-400 border border-pink-500/30'
-                  : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-              }">
-                ${u.role}
-              </span>
+              <select onchange="updateUserRole('${u.id}', this.value)" class="text-xs bg-cyber-dark border border-white/10 text-white rounded px-2 py-1 cursor-pointer hover:border-yellow-400/50 transition">
+                <option value="user" ${u.role === 'user' ? 'selected' : ''}>👤 user</option>
+                <option value="partner" ${u.role === 'partner' ? 'selected' : ''}>🤝 partner</option>
+                <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>⚡ admin</option>
+              </select>
             </td>
             <td class="text-xs whitespace-nowrap">${formatDate(u.created_at)}</td>
             <td class="whitespace-nowrap">
@@ -1844,6 +1894,253 @@ function setupChatCleanupSettingsForm() {
   }
 }
 
+// --- Partner & Withdrawal Management (Admin) ---
+async function updateUserRole(userId, newRole) {
+  if (!confirm(`ยืนยันการเปลี่ยนยศเป็น "${newRole}" หรือไม่?`)) {
+    loadAdminUsers();
+    return;
+  }
+  try {
+    const res = await apiFetch(`/api/admin/users/${userId}/role`, {
+      method: 'PUT',
+      body: { role: newRole }
+    });
+    showToast(res.message || 'เปลี่ยนยศสำเร็จ', 'success');
+    await loadAdminUsers();
+  } catch (err) {
+    showToast(err.error || 'เกิดข้อผิดพลาดในการเปลี่ยนยศ', 'error');
+    await loadAdminUsers();
+  }
+}
+
+let adminWithdrawalsList = [];
+let adminPartnersList = [];
+let adminPartnerMachinesList = [];
+
+async function loadAdminWithdrawals() {
+  const container = document.getElementById('adminWithdrawalList');
+  if (!container) return;
+  try {
+    const data = await apiFetch('/api/admin/withdrawals');
+    adminWithdrawalsList = data.withdrawals || [];
+    renderAdminWithdrawals();
+  } catch (err) {
+    container.innerHTML = `<div class="text-center py-8 text-red-400">❌ ไม่สามารถดึงรายการถอนเงินได้</div>`;
+  }
+}
+
+function renderAdminWithdrawals() {
+  const container = document.getElementById('adminWithdrawalList');
+  if (!container) return;
+
+  if (adminWithdrawalsList.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีคำขอถอนเงินในระบบ</div>`;
+    return;
+  }
+
+  const searchQuery = document.getElementById('partnerSearchInput')?.value.trim().toLowerCase() || '';
+  const filtered = searchQuery
+    ? adminWithdrawalsList.filter(w => {
+        const username = (w.users?.username || '').toLowerCase();
+        const accountName = (w.account_name || '').toLowerCase();
+        const bankName = (w.bank_name || '').toLowerCase();
+        const bankAccount = (w.bank_account || '').toLowerCase();
+        return username.includes(searchQuery) || accountName.includes(searchQuery) || bankName.includes(searchQuery) || bankAccount.includes(searchQuery);
+      })
+    : adminWithdrawalsList;
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ไม่พบคำขอถอนเงินที่ตรงตามการค้นหา "${escapeHTML(searchQuery)}"</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>วันที่แจ้ง</th>
+          <th>พาร์ทเนอร์</th>
+          <th>ยอดถอน</th>
+          <th>ค่าธรรมเนียม (10%)</th>
+          <th>ยอดโอนจริง</th>
+          <th>ข้อมูลบัญชีธนาคาร</th>
+          <th>สถานะ</th>
+          <th>จัดการ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtered.map(w => `
+          <tr>
+            <td class="text-xs whitespace-nowrap">${formatDate(w.created_at)}</td>
+            <td class="font-bold text-white">${w.users ? w.users.username : 'N/A'}</td>
+            <td class="text-yellow-400 font-mono">฿${formatCurrency(w.amount)}</td>
+            <td class="text-gray-400 font-mono">฿${formatCurrency(w.fee)}</td>
+            <td class="text-green-400 font-bold font-mono">฿${formatCurrency(w.net_amount)}</td>
+            <td class="text-xs text-gray-300">
+              <div class="font-bold text-white">${w.bank_name}</div>
+              <div class="font-mono text-cyan-400">${w.bank_account}</div>
+              <div class="text-gray-400">${w.account_name}</div>
+            </td>
+            <td>${statusBadge(w.status)}</td>
+            <td class="whitespace-nowrap">
+              ${w.status === 'pending' ? `
+                <div class="flex gap-1">
+                  <button onclick="approveWithdrawal(${w.id})" class="px-2 py-1 text-xs bg-green-500/10 text-green-400 border border-green-500/20 rounded hover:bg-green-500/20 font-semibold">
+                    ✅ โอนสำเร็จ
+                  </button>
+                  <button onclick="rejectWithdrawal(${w.id})" class="px-2 py-1 text-xs bg-red-500/10 text-red-400 border border-red-500/20 rounded hover:bg-red-500/20 font-semibold">
+                    ❌ ปฏิเสธ
+                  </button>
+                </div>
+              ` : `<span class="text-xs text-gray-500">${w.note || '-'}</span>`}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function approveWithdrawal(id) {
+  if (!confirm('ยืนยันว่าได้ทำการโอนเงินจริงนอกระบบให้พาร์ทเนอร์เรียบร้อยแล้วใช่หรือไม่?')) return;
+  const note = prompt('หมายเหตุการอนุมัติ (ไม่บังคับ):', 'โอนเงินสำเร็จเรียบร้อยแล้ว');
+  try {
+    const res = await apiFetch(`/api/admin/withdrawals/${id}/approve`, {
+      method: 'PUT',
+      body: { note }
+    });
+    showToast(res.message || 'อนุมัติคำขอถอนเงินสำเร็จ', 'success');
+    await loadAdminWithdrawals();
+    await loadAdminPartnerUsers();
+  } catch (err) {
+    showToast(err.error || 'เกิดข้อผิดพลาดในการอนุมัติ', 'error');
+  }
+}
+
+async function rejectWithdrawal(id) {
+  if (!confirm('ปฏิเสธคำขอถอนเงินนี้? (ระบบจะทำการคืนเงินเครดิตเข้ากระเป๋าพาร์ทเนอร์โดยอัตโนมัติ)')) return;
+  const note = prompt('เหตุผลการปฏิเสธ (เพื่อแจ้งพาร์ทเนอร์):', 'ข้อมูลบัญชีไม่ถูกต้อง');
+  if (!note) return;
+  try {
+    const res = await apiFetch(`/api/admin/withdrawals/${id}/reject`, {
+      method: 'PUT',
+      body: { note }
+    });
+    showToast(res.message || 'ปฏิเสธและคืนเครดิตสำเร็จ', 'success');
+    await loadAdminWithdrawals();
+    await loadAdminPartnerUsers();
+  } catch (err) {
+    showToast(err.error || 'เกิดข้อผิดพลาดในการปฏิเสธ', 'error');
+  }
+}
+
+async function loadAdminPartnerUsers() {
+  const container = document.getElementById('adminPartnerUserList');
+  if (!container) return;
+  try {
+    const [pRes, mRes] = await Promise.all([
+      apiFetch('/api/admin/partners'),
+      apiFetch('/api/admin/machines')
+    ]);
+    adminPartnersList = pRes.partners || [];
+    adminPartnerMachinesList = mRes.machines || [];
+    renderAdminPartnerUsers();
+  } catch (err) {
+    container.innerHTML = `<div class="text-center py-8 text-red-400">❌ ไม่สามารถดึงข้อมูลพาร์ทเนอร์ได้</div>`;
+  }
+}
+
+function renderAdminPartnerUsers() {
+  const container = document.getElementById('adminPartnerUserList');
+  if (!container) return;
+
+  if (adminPartnersList.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ยังไม่มีผู้ใช้ยศพาร์ทเนอร์ในระบบ (สามารถเปลี่ยนยศผู้ใช้ได้ที่แท็บ "จัดการผู้ใช้")</div>`;
+    return;
+  }
+
+  const searchQuery = document.getElementById('partnerSearchInput')?.value.trim().toLowerCase() || '';
+  const filtered = searchQuery
+    ? adminPartnersList.filter(p => p.username.toLowerCase().includes(searchQuery))
+    : adminPartnersList;
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="text-center py-8 text-gray-500">📭 ไม่พบพาร์ทเนอร์ที่ตรงตามการค้นหา "${escapeHTML(searchQuery)}"</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <table class="cyber-table">
+      <thead>
+        <tr>
+          <th>ชื่อผู้ใช้พาร์ทเนอร์</th>
+          <th>เครดิตรายได้สะสม (ถอนได้)</th>
+          <th>จำนวนเครื่องที่เป็นเจ้าของ</th>
+          <th>รายการเครื่องที่ผูกไว้</th>
+          <th>วันที่เป็นพาร์ทเนอร์</th>
+          <th>จัดการ</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtered.map(p => {
+          const owned = adminPartnerMachinesList.filter(m => m.owner_id === p.id);
+          return `
+            <tr>
+              <td class="font-bold text-white">${p.username}</td>
+              <td class="text-purple-400 font-bold text-base font-mono">฿${formatCurrency(p.partner_credit)}</td>
+              <td><span class="badge bg-purple-500/20 text-purple-300 border border-purple-500/30">${owned.length} เครื่อง</span></td>
+              <td class="text-xs text-gray-300">
+                ${owned.length > 0 ? owned.map(m => `<span class="inline-block bg-white/5 border border-white/10 rounded px-1.5 py-0.5 mr-1 mb-1">${m.name}</span>`).join('') : '<span class="text-gray-500">-</span>'}
+              </td>
+              <td class="text-xs text-gray-500">${formatDate(p.created_at)}</td>
+              <td>
+                <button onclick="openPartnerCreditAdjustModal('${p.id}')" class="px-2 py-1 text-xs bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 rounded hover:bg-yellow-500/20 font-semibold">
+                  💰 ปรับเครดิต
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function openPartnerCreditAdjustModal(selectedUserId = '') {
+  await populatePartnerDropdown('pc_user_id', selectedUserId);
+  document.getElementById('partnerCreditForm').reset();
+  if (selectedUserId) document.getElementById('pc_user_id').value = selectedUserId;
+  showModal('partnerCreditModal');
+}
+
+function setupPartnerCreditForm() {
+  const form = document.getElementById('partnerCreditForm');
+  if (!form) return;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('partnerCreditSubmitBtn');
+    btn.disabled = true;
+    try {
+      const user_id = document.getElementById('pc_user_id').value;
+      const action = document.getElementById('pc_action').value;
+      const amount = document.getElementById('pc_amount').value;
+      const note = document.getElementById('pc_note').value;
+
+      const res = await apiFetch('/api/admin/partners/adjust-credit', {
+        method: 'POST',
+        body: { user_id, action, amount, note }
+      });
+      showToast(res.message || 'ปรับปรุงเครดิตพาร์ทเนอร์สำเร็จ', 'success');
+      hideModal('partnerCreditModal');
+      await loadAdminPartnerUsers();
+    } catch (err) {
+      showToast(err.error || 'เกิดข้อผิดพลาดในการปรับปรุงเครดิตพาร์ทเนอร์', 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 function scrollAdminChatToBottom() {
   const container = document.getElementById('admin-chat-messages');
   if (container) {
@@ -1858,4 +2155,25 @@ function escapeHTML(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+async function cleanBotAccounts() {
+  if (!confirm('คุณต้องการตรวจสอบและลบบัญชีบอทที่มีลักษณะต้องสงสัยทั้งหมดหรือไม่?')) return;
+  const btn = document.getElementById('cleanBotsBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner mx-auto" style="width:14px;height:14px;border-width:2px"></div> กำลังล้าง...';
+  }
+  try {
+    const data = await apiFetch('/api/admin/clean-bots', { method: 'POST' });
+    showToast(data.message || 'ล้างไอดีบอทเรียบร้อยแล้ว', 'success');
+    if (typeof loadAdminUsers === 'function') await loadAdminUsers();
+  } catch (err) {
+    showToast(err.error || 'เกิดข้อผิดพลาดในการลบไอดีบอท', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span>🧹</span> ล้างไอดีบอท';
+    }
+  }
 }

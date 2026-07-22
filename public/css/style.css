@@ -250,6 +250,18 @@ body {
 }
 .cyber-input::placeholder { color: #6b7280; }
 
+/* Custom select dropdown fix for dark theme */
+select.cyber-input, select {
+  background-color: var(--dark-card);
+  color: #ffffff;
+}
+
+select option, .cyber-input option {
+  background-color: var(--dark-card);
+  color: #ffffff;
+  padding: 8px 12px;
+}
+
 /* --- Countdown Timer --- */
 .countdown {
   font-family: 'Prompt', monospace;
